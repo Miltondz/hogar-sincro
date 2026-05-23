@@ -1,0 +1,6 @@
+{
+  "name": "Hogar Sincro",
+  "description": "Gestión inteligente de compras, inventario, gastos recurrentes y escaneo de recibos en tiempo real para tu hogar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
