@@ -8,6 +8,9 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses ORDER BY timestamp DESC")
     fun getAllExpenses(): Flow<List<Expense>>
 
+    @Query("SELECT * FROM expenses ORDER BY timestamp DESC")
+    suspend fun getAllExpensesDirect(): List<Expense>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExpense(expense: Expense)
 
@@ -29,6 +32,9 @@ interface InventoryDao {
     @Query("SELECT * FROM inventory_items ORDER BY name ASC")
     fun getAllInventoryItems(): Flow<List<InventoryItem>>
 
+    @Query("SELECT * FROM inventory_items ORDER BY name ASC")
+    suspend fun getAllInventoryItemsDirect(): List<InventoryItem>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertInventoryItem(item: InventoryItem)
 
@@ -46,6 +52,9 @@ interface InventoryDao {
 interface ShoppingDao {
     @Query("SELECT * FROM shopping_items ORDER BY isBought ASC, productName ASC")
     fun getAllShoppingItems(): Flow<List<ShoppingItem>>
+
+    @Query("SELECT * FROM shopping_items ORDER BY isBought ASC, productName ASC")
+    suspend fun getAllShoppingItemsDirect(): List<ShoppingItem>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShoppingItem(item: ShoppingItem)

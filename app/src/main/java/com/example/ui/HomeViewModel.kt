@@ -53,12 +53,52 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _syncActivities = MutableStateFlow<List<SyncActivity>>(emptyList())
     val syncActivities: StateFlow<List<SyncActivity>> = _syncActivities.asStateFlow()
 
+    // Neon PostgreSQL Connection status: "DISCONNECTED", "CONNECTING", "CONNECTED", "ERROR"
+    val neonConnectionState = MutableStateFlow("DISCONNECTED")
+
+    // Global Web Portal simulated view toggle
+    val showWebPortal = MutableStateFlow(false)
+
     init {
         viewModelScope.launch {
             // Seeding default data on startup
             repository.prepopulateIfEmpty()
             generateSmartAlerts()
             startRealTimeSyncSimulation()
+            // Pull/push with Neon Postgres on startup
+            syncWithNeon()
+        }
+    }
+
+    // SQL Over Neon Postgres Cloud Sincro Action
+    fun syncWithNeon() {
+        viewModelScope.launch {
+            neonConnectionState.value = "CONNECTING"
+            val connected = NeonDatabaseHelper.testConnection()
+            if (connected) {
+                val tablesCreated = NeonDatabaseHelper.createTables()
+                if (tablesCreated) {
+                    val syncExpensesOk = NeonDatabaseHelper.syncExpenses(getApplication(), repository.expenseDao)
+                    val syncInventoryOk = NeonDatabaseHelper.syncInventory(getApplication(), repository.inventoryDao)
+                    val syncShoppingOk = NeonDatabaseHelper.syncShopping(getApplication(), repository.shoppingDao)
+                    
+                    if (syncExpensesOk && syncInventoryOk && syncShoppingOk) {
+                        neonConnectionState.value = "CONNECTED"
+                        addSyncActivity("SISTEMA", "Base de datos Neon PostgreSQL sincronizada exitosamente.", "SISTEMA")
+                        addToastNotification("Sincronización Neon", "Datos del hogar actualizados con Neon Cloud.")
+                    } else {
+                        neonConnectionState.value = "ERROR"
+                        addSyncActivity("SISTEMA", "Fallo parcial de sincronización en Neon Postgres.", "SISTEMA")
+                    }
+                } else {
+                    neonConnectionState.value = "ERROR"
+                    addSyncActivity("SISTEMA", "No se pudieron comprobar o crear las tablas en Neon.", "SISTEMA")
+                }
+            } else {
+                neonConnectionState.value = "ERROR"
+                addSyncActivity("SISTEMA", "No se pudo conectar a Neon PostgreSQL. Modo offline activo.", "SISTEMA")
+            }
+            generateSmartAlerts()
         }
     }
 
@@ -232,6 +272,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteExpense(expense: Expense) {
         viewModelScope.launch {
+            DeletionTracker.trackExpenseDeletion(getApplication(), expense.id)
             repository.deleteExpense(expense)
             generateSmartAlerts()
             
@@ -295,12 +336,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteShoppingItem(item: ShoppingItem) {
         viewModelScope.launch {
+            DeletionTracker.trackShoppingDeletion(getApplication(), item.id)
             repository.deleteShoppingItem(item)
         }
     }
 
     fun clearBoughtShoppingItems() {
         viewModelScope.launch {
+            shoppingItems.value.filter { it.isBought }.forEach { boughtItem ->
+                DeletionTracker.trackShoppingDeletion(getApplication(), boughtItem.id)
+            }
             repository.deleteBoughtShoppingItems()
         }
     }
@@ -342,10 +387,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteInventoryItem(item: InventoryItem) {
          viewModelScope.launch {
-             repository.deleteInventoryItem(item)
-             generateSmartAlerts()
+              DeletionTracker.trackInventoryDeletion(getApplication(), item.id)
+              repository.deleteInventoryItem(item)
+              generateSmartAlerts()
          }
     }
+
+
 
     // Household Sync Settings Actions
     fun changeSyncProvider(isEnabled: Boolean) {

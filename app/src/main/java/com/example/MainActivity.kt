@@ -55,50 +55,71 @@ fun MainAppScreen() {
     var currentTab by remember { mutableStateOf(NavigationTab.EXPENSES) }
     val notifications by viewModel.notifications.collectAsState()
     var showNotificationsDialog by remember { mutableStateOf(false) }
+    val showWebPortal by viewModel.showWebPortal.collectAsState()
 
     // Synchronize current state alerts on view loaded
     LaunchedEffect(currentTab) {
         viewModel.generateSmartAlerts()
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = when (currentTab) {
-                                NavigationTab.EXPENSES -> Icons.Default.Paid
-                                NavigationTab.SHOPPING -> Icons.Default.ShoppingCart
-                                NavigationTab.INVENTORY -> Icons.Default.Inventory2
-                                NavigationTab.SCANNER -> Icons.Default.AutoAwesome
-                                NavigationTab.SYNC -> Icons.Default.CloudSync
-                            },
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when (currentTab) {
-                                NavigationTab.EXPENSES -> "Gastos del Hogar"
-                                NavigationTab.SHOPPING -> "Lista de Compras"
-                                NavigationTab.INVENTORY -> "Despensa y Stock"
-                                NavigationTab.SCANNER -> "Escáner Inteligente"
-                                NavigationTab.SYNC -> "Sincronización Hogar"
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                    }
-                },
-                actions = {
-                    // Smart alert bell at top-right
-                    IconButton(
-                        onClick = { showNotificationsDialog = true },
-                        modifier = Modifier.testTag("notification_bell_button")
-                    ) {
+    if (showWebPortal) {
+        WebCompanionScreen(viewModel = viewModel, onBackToMobile = { viewModel.showWebPortal.value = false })
+    } else {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = when (currentTab) {
+                                    NavigationTab.EXPENSES -> Icons.Default.Paid
+                                    NavigationTab.SHOPPING -> Icons.Default.ShoppingCart
+                                    NavigationTab.INVENTORY -> Icons.Default.Inventory2
+                                    NavigationTab.SCANNER -> Icons.Default.AutoAwesome
+                                    NavigationTab.SYNC -> Icons.Default.CloudSync
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = when (currentTab) {
+                                    NavigationTab.EXPENSES -> "Gastos del Hogar"
+                                    NavigationTab.SHOPPING -> "Lista de Compras"
+                                    NavigationTab.INVENTORY -> "Despensa y Stock"
+                                    NavigationTab.SCANNER -> "Escáner Inteligente"
+                                    NavigationTab.SYNC -> "Sincronización Hogar"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                        }
+                    },
+                    actions = {
+                        // Desktop companion switch button
+                        TextButton(
+                            onClick = { viewModel.showWebPortal.value = true },
+                            modifier = Modifier.testTag("web_portal_toggle_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Laptop,
+                                contentDescription = "Portal Web",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Consola Web", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Smart alert bell at top-right
+                        IconButton(
+                            onClick = { showNotificationsDialog = true },
+                            modifier = Modifier.testTag("notification_bell_button")
+                        ) {
                         BadgedBox(
                             badge = {
                                 if (notifications.isNotEmpty()) {
@@ -335,5 +356,6 @@ fun MainAppScreen() {
                 }
             }
         )
+    }
     }
 }
