@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -15,6 +16,9 @@ import java.util.*
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     val repository = Repository(database)
+
+    private val prefs = application.getSharedPreferences("hogar_sincro_prefs", Context.MODE_PRIVATE)
+    val isLoggedIn = MutableStateFlow(prefs.getBoolean("is_logged_in", false))
 
     // Data streams from database
     val expenses: StateFlow<List<Expense>> = repository.allExpenses
@@ -530,6 +534,57 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val current = _notifications.value.toMutableList()
         current.removeAll { it.id == id }
         _notifications.value = current
+    }
+
+    // Session Management logic for elegant Login/Register screen
+    fun loginUser(activeUser: String, householdCode: String) {
+        viewModelScope.launch {
+            val currentSettings = syncSettings.value
+            val currentMembers = currentSettings.members.split(",").map { it.trim() }.toMutableSet()
+            currentMembers.add(activeUser)
+            val updatedSetting = currentSettings.copy(
+                activeUser = activeUser,
+                householdCode = householdCode.uppercase(),
+                members = currentMembers.joinToString(",")
+            )
+            repository.saveSyncSettings(updatedSetting)
+            
+            prefs.edit().putBoolean("is_logged_in", true).apply()
+            isLoggedIn.value = true
+            
+            addSyncActivity(activeUser, "Inició sesión en el hogar $householdCode.", "SISTEMA")
+            syncWithNeon()
+        }
+    }
+
+    fun registerUser(activeUser: String, householdCode: String, membersCsv: String) {
+        viewModelScope.launch {
+            val membersList = membersCsv.split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toMutableSet()
+            membersList.add(activeUser)
+            
+            val updatedSetting = SyncSettings(
+                activeUser = activeUser,
+                householdCode = householdCode.uppercase(),
+                members = membersList.joinToString(",")
+            )
+            repository.saveSyncSettings(updatedSetting)
+            
+            prefs.edit().putBoolean("is_logged_in", true).apply()
+            isLoggedIn.value = true
+            
+            addSyncActivity(activeUser, "Registró un nuevo hogar con código $householdCode.", "SISTEMA")
+            syncWithNeon()
+        }
+    }
+
+    fun logoutUser() {
+        viewModelScope.launch {
+            prefs.edit().putBoolean("is_logged_in", false).apply()
+            isLoggedIn.value = false
+        }
     }
 }
 

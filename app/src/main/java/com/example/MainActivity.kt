@@ -38,7 +38,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                MainAppScreen()
+                val viewModel: HomeViewModel = viewModel()
+                val isLoggedIn by viewModel.isLoggedIn.collectAsState()
+                if (!isLoggedIn) {
+                    LoginScreen(viewModel = viewModel)
+                } else {
+                    MainAppScreen(viewModel = viewModel)
+                }
             }
         }
     }
@@ -50,8 +56,7 @@ enum class NavigationTab {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainAppScreen() {
-    val viewModel: HomeViewModel = viewModel()
+fun MainAppScreen(viewModel: HomeViewModel) {
     var currentTab by remember { mutableStateOf(NavigationTab.EXPENSES) }
     val notifications by viewModel.notifications.collectAsState()
     var showNotificationsDialog by remember { mutableStateOf(false) }

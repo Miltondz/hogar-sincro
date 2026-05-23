@@ -339,6 +339,23 @@ fun SyncScreen(viewModel: HomeViewModel) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Añadir Integrante al Hogar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Button to Log Out / Cerrar Sesión
+                        OutlinedButton(
+                            onClick = { viewModel.logoutUser() },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("logout_button")
+                        ) {
+                            Icon(Icons.Default.Logout, contentDescription = "Cerrar Sesión", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Cerrar Sesión (Salir de este Hogar)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
