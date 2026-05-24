@@ -119,25 +119,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val items = inventoryItems.first()
             val bills = expenses.first()
 
-            // 1. Check for low stock or soon depleting items
+            // 1. Alert only when item is completely depleted (stock = 0)
             items.forEach { item ->
-                if (item.currentStock <= item.minStockAlert) {
+                if (item.currentStock == 0.0) {
                     alerts.add(
                         SmartNotification(
-                            id = "low_${item.id}",
-                            title = "Stock Bajo: ${item.name}",
-                            message = "${item.name} se encuentra en ${item.currentStock} ${item.unit} (Mínimo: ${item.minStockAlert}). ¡Agrégalo a compras!",
+                            id = "depleted_${item.id}",
+                            title = "Agotado: ${item.name}",
+                            message = "${item.name} está completamente agotado. Agrégalo a tu lista de compras.",
                             type = "ALERTA",
-                            timestamp = System.currentTimeMillis()
-                        )
-                    )
-                } else if (item.daysUntilDepletion in 1..4) {
-                    alerts.add(
-                        SmartNotification(
-                            id = "deplete_${item.id}",
-                            title = "Agotamiento Pronto: ${item.name}",
-                            message = "Quedan aprox. ${item.daysUntilDepletion} días de inventario de ${item.name}.",
-                            type = "ADVERTENCIA",
                             timestamp = System.currentTimeMillis()
                         )
                     )
@@ -243,6 +233,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             showSnackbar("$name añadido a la lista de compras", SnackbarType.SUCCESS)
             val activeUser = syncSettings.value.activeUser
             addSyncActivity(activeUser, "Agregó '${name}' (${qty} ${unit}) a compras", "COMPRAS")
+        }
+    }
+
+    // Bulk add from pantry selection (checkbox list)
+    fun addInventoryItemsToShoppingList(selections: List<Pair<InventoryItem, Double>>) {
+        viewModelScope.launch {
+            val activeUser = syncSettings.value.activeUser
+            var count = 0
+            selections.forEach { (invItem, qty) ->
+                if (qty > 0) {
+                    val item = ShoppingItem(
+                        productName = invItem.name,
+                        quantityToBuy = qty,
+                        unit = invItem.unit,
+                        estimatedPrice = invItem.bestPrice ?: 1.50,
+                        targetStore = invItem.bestStore
+                    )
+                    repository.insertShoppingItem(item)
+                    count++
+                }
+            }
+            if (count > 0) {
+                showSnackbar("$count artículo(s) añadidos a la lista de compras ✓", SnackbarType.SUCCESS)
+                addSyncActivity(activeUser, "Añadió $count artículos de despensa a lista de compras", "COMPRAS")
+            }
         }
     }
 
@@ -482,6 +497,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         showSnackbar("Sesión de Carrito iniciada con $$budget", SnackbarType.SUCCESS)
     }
 
+    fun cancelShoppingCart() {
+        prefs.edit().apply {
+            putBoolean("shopping_cart_active", false)
+            putFloat("shopping_cart_budget", 0f)
+            apply()
+        }
+        shoppingCartActive.value = false
+        shoppingCartBudget.value = 0.0
+        showSnackbar("Sesión de compra cancelada.", SnackbarType.INFO)
+    }
+
     fun closeCartAndLogExpense(concept: String, actualSpent: Double) {
         viewModelScope.launch {
             val activeUser = syncSettings.value.activeUser
@@ -608,11 +634,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     // Ticket automatic OCR Scanning Action
     fun scanTicketWithGemini(bitmap: Bitmap?, sampleType: String?) {
+        if (bitmap == null) {
+            showSnackbar("No se pudo cargar la imagen. Intenta de nuevo.", SnackbarType.ERROR)
+            return
+        }
+        // Capture bitmap strongly before launching coroutine to prevent GC
+        val capturedBitmap = bitmap
         viewModelScope.launch {
+            // Clear any previous result FIRST so UI resets to loading state
+            scanResult.value = null
             isScanning.value = true
             try {
                 val modelToUse = syncSettings.value.geminiModel
-                val receipt = GeminiScannerService.scanReceipt(bitmap, modelName = modelToUse, sampleType = sampleType)
+                val receipt = GeminiScannerService.scanReceipt(capturedBitmap, modelName = modelToUse, sampleType = sampleType)
                 scanResult.value = receipt
 
 

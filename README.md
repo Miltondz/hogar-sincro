@@ -27,8 +27,9 @@ La aplicación adopta un modelo de arquitectura **Local-First**, utilizando alma
 - Comparador visual de precios en comercios locales históricos para asegurar el costo más eficiente.
 
 ### 4. Escáner Inteligente (Gemini AI Scanner)
-- Escaneo fotográfico de recibos físicos e imágenes digitales integrando los modelos multimodales **Gemini API**.
+- Escaneo fotográfico de recibos físicos e imágenes digitales integrando los modelos multimodales **Gemini API** (`gemini-3.5-flash` por defecto).
 - Extracción autónoma de productos, precios individuales de tickets de compra, supermercados y fechas, convirtiendo capturas visuales en registros de datos estructurados automáticamente en cuestión de segundos.
+- **Modelo configurable en tiempo de ejecución** desde el Panel de Sincronización, sin necesidad de recompilar la aplicación.
 
 ### 5. Sincronización Avanzada (Neon Database Sync)
 - Sincronización bidireccional integrada directamente con **Neon Serverless PostgreSQL**.
@@ -107,17 +108,18 @@ El código fuente está estructurado de manera modular y limpia en el lenguaje *
 │   ├── AppDatabase.kt            # Base de datos centralizada de Room
 │   ├── DeletionTracker.kt        # Gestor de eliminaciones locales pendientes de réplica
 │   ├── NeonDatabaseHelper.kt     # Consultas JDBC PostgreSQL, sentencias DDL y lógica bidireccional
-│   ├── GeminiScannerService.kt   # Integración con el SDK de Gemini API para escaneo de recibos
+│   ├── GeminiScannerService.kt   # Integración multimodal con Gemini API (recibos, despensa, precios)
 │   └── Repository.kt             # Origen de datos unificado de la aplicación
 └── ui/                           # Capa de UI y Lógica de Presentación (Jetpack Compose, M3 Style)
     ├── HomeViewModel.kt          # Controlador de Estados del Hogar y eventos de sincronización
     └── screens/                  # Pantallas del flujo de navegación
-        ├── ExpensesScreen.kt     # Vista de gestión financiera y gastos
-        ├── ShoppingScreen.kt     # Vista de checklists de compras del hogar
-        ├── InventoryScreen.kt    # Vista de administración de stock de la despensa
-        ├── ScannerScreen.kt      # Vista del alimentador inteligente mediante Gemini OCR
-        ├── SyncScreen.kt         # Panel de conectividad y Sincronización en la Nube
-        └── WebCompanionScreen.kt # Vista Web Companion para monitoreo general en pantallas anchas
+        ├── ExpensesScreen.kt          # Vista de gestión financiera y gastos
+        ├── ShoppingScreen.kt          # Vista de checklists de compras del hogar
+        ├── InventoryScreen.kt         # Vista de administración de stock de la despensa
+        ├── ScannerScreen.kt           # Vista del alimentador inteligente mediante Gemini OCR
+        ├── SyncScreen.kt              # Panel de conectividad, sincronización y configuración de IA
+        ├── CameraOrGalleryLauncher.kt # Utilidades de decodificación de imágenes con downsampling
+        └── WebCompanionScreen.kt      # Vista Web Companion para monitoreo en pantallas anchas
 ```
 
 ---
@@ -142,5 +144,5 @@ El repositorio cuenta con una suite estructurada de pruebas en el entorno de des
 - **UI Framework**: [Jetpack Compose](https://developer.android.com/compose) con componentes Material Design 3 (M3).
 - **Base de Datos Local**: [Room DB](https://developer.android.com/training/data-storage/room) con compilador KSP.
 - **Base de Datos Remota**: [Neon Serverless PostgreSQL](https://neon.tech/) impulsado por conductores de conexión JDBC.
-- **Inteligencia Artificial**: [Gemini Pro / Flash API](https://ai.google.dev/) para el análisis de tickets de compra.
+- **Inteligencia Artificial**: [Gemini API](https://ai.google.dev/) — modelo `gemini-3.5-flash` por defecto, configurable desde la UI sin recompilar. Soporta escaneo multimodal de recibos, despensa y precios.
 - **Entorno de Compilación**: Gradle (Kotlin DSL con archivos `.gradle.kts`).

@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -10,12 +9,15 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -24,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -34,10 +37,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.ShoppingItem
 import com.example.ui.HomeViewModel
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShoppingScreen(viewModel: HomeViewModel) {
     val context = LocalContext.current
@@ -63,11 +69,11 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
+            val bitmap = decodeSampledBitmapFromUri(context, uri)
             if (bitmap != null) {
                 viewModel.scanProductPriceWithGemini(bitmap)
+            } else {
+                viewModel.showSnackbar("No se pudo leer la imagen.", com.example.ui.SnackbarType.ERROR)
             }
         }
     }
@@ -100,9 +106,9 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                     val animatedPercentage by animateFloatAsState(targetValue = percentage, label = "budget_progress")
 
                     Card(
-                        modifier = Modifier.fillMaxWidth().testTag("active_shopping_cart_card"),
+                        modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(24.dp)).testTag("active_shopping_cart_card"),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (overBudget) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                            containerColor = if (overBudget) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
                         ),
                         shape = RoundedCornerShape(24.dp),
                         border = if (overBudget) androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFD32F2F)) else null
@@ -122,138 +128,137 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                     Icon(
                                         imageVector = Icons.Default.ShoppingCart,
                                         contentDescription = null,
-                                        tint = if (overBudget) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
+                                        tint = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Sesión de Compra Activa",
-                                        style = MaterialTheme.typography.titleMedium,
+                                        text = "Compra Activa",
                                         fontWeight = FontWeight.Bold,
-                                        color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.onSecondaryContainer
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                                 
-                                IconButton(
-                                    onClick = { showCancelCartDialog = true },
-                                    modifier = Modifier.size(28.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.primary)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Cancel, "Cancelar", tint = Color.Gray)
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column {
-                                    Text("Presupuesto del Día", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                    Text("$${String.format(Locale.US, "%,.2f", cartBudget)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("Monto en Carrito", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                                     Text(
-                                        text = "$${String.format(Locale.US, "%,.2f", totalBoughtCost)}",
-                                        style = MaterialTheme.typography.headlineSmall,
+                                        text = "Ppto: $${String.format(Locale.US, "%.2f", cartBudget)}",
+                                        style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (overBudget) Color(0xFFD32F2F) else Color(0xFF4CAF50)
+                                        color = Color.White
                                     )
                                 }
                             }
-
-                            // Dynamic/animated budget bar
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Gastado Real",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (overBudget) Color(0xFFC62828).copy(alpha = 0.8f) else Color.Gray,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "$${String.format(Locale.US, "%,.2f", totalBoughtCost)}",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                
+                                val remaining = cartBudget - totalBoughtCost
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = if (overBudget) "Excedido por" else "Disponible",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (overBudget) Color(0xFFC62828).copy(alpha = 0.8f) else Color.Gray,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "$${String.format(Locale.US, "%,.2f", kotlin.math.abs(remaining))}",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (overBudget) Color(0xFFC62828) else Color(0xFF2E7D32)
+                                    )
+                                }
+                            }
+                            
+                            // Budget progress bar
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 LinearProgressIndicator(
-                                    progress = animatedPercentage,
+                                    progress = { animatedPercentage },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(10.dp)
                                         .clip(RoundedCornerShape(5.dp)),
-                                    color = if (overBudget) Color(0xFFD32F2F) else Color(0xFF4CAF50),
+                                    color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                                 )
-                                
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "${String.format(Locale.US, "%.0f", totalBoughtCost / cartBudget * 100)}% consumido",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.Gray
-                                    )
-                                    if (overBudget) {
-                                        Text(
-                                            text = "¡Excedido por $${String.format(Locale.US, "%.2f", totalBoughtCost - cartBudget)}!",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFFD32F2F)
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Disponible: $${String.format(Locale.US, "%.2f", cartBudget - totalBoughtCost)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Medium,
-                                            color = Color(0xFF2E7D32)
-                                        )
-                                    }
-                                }
                             }
-
-                            // Action buttons: Finish & Quick Price Scanner
+                            
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
+                                // Add button to launch Gemini price scanner
+                                FilledTonalButton(
+                                    onClick = { pricePhotoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                    modifier = Modifier.weight(1.2f).height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !isScanningPrice
+                                ) {
+                                    if (isScanningPrice) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Escaneando...", fontSize = 12.sp)
+                                    } else {
+                                        Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Escanear Precio (IA)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                
                                 Button(
                                     onClick = { showFinishCartDialog = true },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (overBudget) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
+                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                                 ) {
-                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.CheckCircle, null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Finalizar Compra", fontSize = 12.sp)
+                                    Text("Terminar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
-
-                                if (isScanningPrice) {
-                                    Button(
-                                        onClick = {},
-                                        enabled = false,
-                                        modifier = Modifier.weight(1.1f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Leyendo Precio...", fontSize = 11.sp)
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = {
-                                            pricePhotoPickerLauncher.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        },
-                                        modifier = Modifier.weight(1.1f),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-                                    ) {
-                                        Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Capturar Precio IA", fontSize = 11.sp)
-                                    }
+                                
+                                IconButton(
+                                    onClick = { showCancelCartDialog = true },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Icon(Icons.Default.Close, null)
                                 }
                             }
                         }
                     }
                 } else {
-                    // Regular shopping estimation header card
+                    // Standard budget forecasting preview card
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                        shape = RoundedCornerShape(20.dp)
+                        modifier = Modifier.fillMaxWidth().shadow(2.dp, RoundedCornerShape(24.dp)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(24.dp)
                     ) {
                         Column(
                             modifier = Modifier
@@ -261,68 +266,37 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                 .padding(20.dp)
                         ) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Calculate,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Estimación del Carrito",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                
-                                if (shoppingList.any { it.isBought }) {
-                                    TextButton(
-                                        onClick = { viewModel.clearBoughtShoppingItems() },
-                                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                    ) {
-                                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Limpiar Comprados", fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                            
-                            Spacer(modifier = Modifier.height(14.dp))
-                            
-                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Costo Pendiente",
+                                        text = "Costo Estimado Pendiente",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                        color = Color.Gray,
+                                        fontWeight = FontWeight.Bold
                                     )
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "$${String.format(Locale.US, "%,.2f", possibleCostPending)}",
                                         style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = FontWeight.Black,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                                 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Comprado Hoy",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                    )
-                                    Text(
-                                        text = "$${String.format(Locale.US, "%,.2f", totalBoughtCost)}",
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF4CAF50)
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ShoppingCart,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -332,12 +306,12 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                             // Start Shopping Session button
                             Button(
                                 onClick = { showStartCartDialog = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                shape = RoundedCornerShape(14.dp)
                             ) {
                                 Icon(Icons.Default.PlayArrow, null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Iniciar Sesión de Compra (Supermercado)", fontWeight = FontWeight.Bold)
+                                Text("Iniciar Sesión de Compra", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -347,7 +321,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
             // List Title Header
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -360,7 +334,8 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                     Text(
                         text = "${shoppingList.count { !it.isBought }} artículos pendientes",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = Color.Gray,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -369,37 +344,43 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
             if (shoppingList.isEmpty()) {
                 item {
                     Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(24.dp),
+                        border = ButtonDefaults.outlinedButtonBorder
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                                modifier = Modifier.size(56.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFE8F5E9)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2E7D32),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "¡Lista de Compras Completada!",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
+                                text = "¡Todo Abastecido!",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Tu hogar está completamente abastecido. Los productos con bajo stock se listarán aquí para agregarlos fácilmente.",
+                                text = "Tu hogar está completamente al día. Los productos con stock bajo o agregados de la despensa se mostrarán aquí.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.Gray,
-                                modifier = Modifier.padding(top = 4.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 12.dp)
                             )
                         }
                     }
@@ -428,7 +409,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
             Icon(imageVector = Icons.Default.Add, contentDescription = "Añadir a la lista")
         }
 
-        // Add manual item Dialog
+        // Add manual item Dialog (Responsive custom design)
         if (showAddItemDialog) {
             AddShoppingItemDialog(
                 onDismiss = { showAddItemDialog = false },
@@ -440,7 +421,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
             )
         }
 
-        // Start Cart Dialog
+        // Start Cart Dialog (Single OutlinedTextField)
         if (showStartCartDialog) {
             var budgetInput by remember { mutableStateOf("") }
             AlertDialog(
@@ -466,7 +447,8 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                             viewModel.startShoppingCart(budget)
                             showStartCartDialog = false
                         },
-                        enabled = budgetInput.toDoubleOrNull() != null
+                        enabled = budgetInput.toDoubleOrNull() != null,
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Iniciar Sesión")
                     }
@@ -475,7 +457,8 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                     TextButton(onClick = { showStartCartDialog = false }) {
                         Text("Cancelar")
                     }
-                }
+                },
+                shape = RoundedCornerShape(20.dp)
             )
         }
 
@@ -483,20 +466,16 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
         if (showCancelCartDialog) {
             AlertDialog(
                 onDismissRequest = { showCancelCartDialog = false },
-                title = { Text("Cancelar Sesión de Compra") },
+                title = { Text("Cancelar Compra", fontWeight = FontWeight.Bold) },
                 text = { Text("¿Deseas cerrar la sesión de compra actual? No se registrará ningún gasto en la base de datos.") },
                 confirmButton = {
                     Button(
                         onClick = {
-                            // Reset cart session
-                            viewModel.shoppingCartActive.value = false
-                            viewModel.shoppingCartBudget.value = 0.0
-                            val prefs = context.getSharedPreferences("hogar_sincro_prefs", android.content.Context.MODE_PRIVATE)
-                            prefs.edit().putBoolean("shopping_cart_active", false).putFloat("shopping_cart_budget", 0f).apply()
+                            viewModel.cancelShoppingCart()
                             showCancelCartDialog = false
-                            viewModel.showSnackbar("Sesión de compra cancelada.", com.example.ui.SnackbarType.INFO)
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Cerrar sin Guardar")
                     }
@@ -505,59 +484,105 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                     TextButton(onClick = { showCancelCartDialog = false }) {
                         Text("Volver")
                     }
-                }
+                },
+                shape = RoundedCornerShape(20.dp)
             )
         }
 
-        // Finish Cart Dialog
+        // Finish Cart Dialog (Mobile Optimized, scrollable)
         if (showFinishCartDialog) {
             var concept by remember { mutableStateOf("Compra Supermercado") }
             var spentAmount by remember { mutableStateOf(totalBoughtCost.toString()) }
 
-            AlertDialog(
+            Dialog(
                 onDismissRequest = { showFinishCartDialog = false },
-                title = { Text("Finalizar y Guardar Gasto", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Confirma el importe total real pagado en caja para registrarlo en los Gastos del Hogar:")
-                        OutlinedTextField(
-                            value = concept,
-                            onValueChange = { concept = it },
-                            label = { Text("Concepto") },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = spentAmount,
-                            onValueChange = { spentAmount = it },
-                            label = { Text("Monto Real Pagado ($)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val actualSpent = spentAmount.toDoubleOrNull() ?: totalBoughtCost
-                            viewModel.closeCartAndLogExpense(concept, actualSpent)
-                            showFinishCartDialog = false
-                        },
-                        enabled = spentAmount.toDoubleOrNull() != null && concept.isNotBlank()
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.75f)
+                        .imePadding(),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp)
                     ) {
-                        Text("Finalizar e Importar")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showFinishCartDialog = false }) {
-                        Text("Atrás")
+                        // Header
+                        Text(
+                            text = "Finalizar y Guardar Gasto",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Scrollable Body
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                "Confirma el importe total real pagado en caja para registrarlo en los Gastos del Hogar:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+                            
+                            OutlinedTextField(
+                                value = concept,
+                                onValueChange = { concept = it },
+                                label = { Text("Concepto") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            
+                            OutlinedTextField(
+                                value = spentAmount,
+                                onValueChange = { spentAmount = it },
+                                label = { Text("Monto Real Pagado ($)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Footer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = { showFinishCartDialog = false }) {
+                                Text("Atrás")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val actualSpent = spentAmount.toDoubleOrNull() ?: totalBoughtCost
+                                    viewModel.closeCartAndLogExpense(concept, actualSpent)
+                                    showFinishCartDialog = false
+                                },
+                                enabled = spentAmount.toDoubleOrNull() != null && concept.isNotBlank(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Finalizar e Importar")
+                            }
+                        }
                     }
                 }
-            )
+            }
         }
 
-        // Price Scanner Confirmation Dialog (Bandeja de verificación de precio rápido)
+        // Price Scanner Confirmation Dialog (AI Price Confirmation - Mobile Optimized)
         if (priceScanResult != null) {
             var confirmedName by remember(priceScanResult) { mutableStateOf(priceScanResult!!.name) }
             var confirmedPrice by remember(priceScanResult) { mutableStateOf(priceScanResult!!.price.toString()) }
@@ -566,137 +591,184 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
 
             val units = listOf("u", "kg", "paquetes", "litros")
 
-            AlertDialog(
+            Dialog(
                 onDismissRequest = { viewModel.clearPriceScanResult() },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Precio Detectado con IA")
-                    }
-                },
-                text = {
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.85f)
+                        .imePadding(),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
+                ) {
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp)
                     ) {
-                        Text("Gemini leyó los siguientes detalles del producto. Edítalos si es necesario:", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                        
-                        OutlinedTextField(
-                            value = confirmedName,
-                            onValueChange = { confirmedName = it },
-                            label = { Text("Nombre del Producto") },
-                            shape = RoundedCornerShape(12.dp),
+                        // Header
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
-                        )
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Precio Detectado con IA",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedTextField(
-                                value = confirmedPrice,
-                                onValueChange = { confirmedPrice = it },
-                                label = { Text("Precio Unitario ($)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+                        // Scrollable Body
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                "Gemini leyó los siguientes detalles del producto. Edítalos si es necesario:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
                             )
                             
                             OutlinedTextField(
-                                value = quantityInput,
-                                onValueChange = { quantityInput = it },
-                                label = { Text("Cantidad") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                value = confirmedName,
+                                onValueChange = { confirmedName = it },
+                                label = { Text("Nombre del Producto") },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth()
                             )
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = confirmedPrice,
+                                    onValueChange = { confirmedPrice = it },
+                                    label = { Text("Precio Unitario ($)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                
+                                OutlinedTextField(
+                                    value = quantityInput,
+                                    onValueChange = { quantityInput = it },
+                                    label = { Text("Cantidad") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            // Unit selector
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    "Unidad",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .clickable {
+                                            val index = units.indexOf(unitSelect)
+                                            unitSelect = units[(index + 1) % units.size]
+                                        }
+                                        .padding(horizontal = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(unitSelect, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            }
                         }
 
-                        // Unit selector
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text("Unidad", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 2.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .clickable {
-                                        val index = units.indexOf(unitSelect)
-                                        unitSelect = units[(index + 1) % units.size]
-                                    }
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Footer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = { viewModel.clearPriceScanResult() }) {
+                                Text("Descartar")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val priceVal = confirmedPrice.toDoubleOrNull() ?: priceScanResult!!.price
+                                    val qtyVal = quantityInput.toDoubleOrNull() ?: 1.0
+                                    viewModel.addShoppingItem(confirmedName, qtyVal, unitSelect, "Supermercado")
+                                    viewModel.clearPriceScanResult()
+                                    viewModel.showSnackbar("Producto agregado desde ticket IA.", com.example.ui.SnackbarType.SUCCESS)
+                                },
+                                enabled = confirmedName.isNotBlank() && confirmedPrice.toDoubleOrNull() != null && quantityInput.toDoubleOrNull() != null,
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text(unitSelect, style = MaterialTheme.typography.bodyLarge)
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                Text("Aceptar y Añadir")
                             }
                         }
                     }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val priceVal = confirmedPrice.toDoubleOrNull() ?: priceScanResult!!.price
-                            val qtyVal = quantityInput.toDoubleOrNull() ?: 1.0
-                            
-                            // Insert to database shopping list
-                            // We can use viewModel.addShoppingItem helper
-                            // Wait, it expects best price to be updated, which is automatically fetched by repo or VM.
-                            // We can also insert directly or update.
-                            // Let's call viewModel.addShoppingItem which inserts it!
-                            // Since we want this specific custom price, we insert/add the item
-                            viewModel.addShoppingItem(confirmedName, qtyVal, unitSelect, "Supermercado")
-                            
-                            viewModel.clearPriceScanResult()
-                            viewModel.showSnackbar("Producto $confirmedName añadido al carrito.", com.example.ui.SnackbarType.SUCCESS)
-                        },
-                        enabled = confirmedName.isNotBlank() && confirmedPrice.toDoubleOrNull() != null && quantityInput.toDoubleOrNull() != null
-                    ) {
-                        Text("Agregar al Carrito")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { viewModel.clearPriceScanResult() }) {
-                        Text("Descartar")
-                    }
                 }
-            )
+            }
         }
     }
 }
 
 @Composable
-fun ShoppingItemRow(item: ShoppingItem, onToggle: () -> Unit, onDelete: () -> Unit) {
+fun ShoppingItemRow(
+    item: ShoppingItem,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onToggle() },
+            .padding(vertical = 2.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isBought) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+            containerColor = if (item.isBought) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (item.isBought) 0.dp else 1.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkbox indicator
-            IconButton(onClick = onToggle) {
-                Icon(
-                    imageVector = if (item.isBought) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = "Cambiar estado",
-                    tint = if (item.isBought) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+            // Checkbox
+            Checkbox(
+                checked = item.isBought,
+                onCheckedChange = { onToggle() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = Color(0xFF2E7D32)
                 )
-            }
+            )
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.productName,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     textDecoration = if (item.isBought) TextDecoration.LineThrough else TextDecoration.None,
                     color = if (item.isBought) Color.Gray else MaterialTheme.colorScheme.onSurface,
@@ -709,32 +781,43 @@ fun ShoppingItemRow(item: ShoppingItem, onToggle: () -> Unit, onDelete: () -> Un
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "${item.quantityToBuy} ${item.unit}",
+                        text = "${
+                            if (item.quantityToBuy % 1.0 == 0.0) 
+                                item.quantityToBuy.toInt().toString() 
+                            else 
+                                String.format(Locale.US, "%.1f", item.quantityToBuy)
+                        } ${item.unit}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
+                        color = if (item.isBought) Color.Gray else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
                     )
                     
                     if (item.targetStore != null) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f))
+                                .background(
+                                    if (item.isBought) 
+                                        Color.LightGray.copy(alpha = 0.2f) 
+                                    else 
+                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                                )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Storefront,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = if (item.isBought) Color.Gray else MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(10.dp)
                                 )
-                                Spacer(modifier = Modifier.width(2.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Mejor Precio: ${item.targetStore}",
+                                    text = item.targetStore,
                                     style = MaterialTheme.typography.labelSmall,
                                     fontSize = 8.sp,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    color = if (item.isBought) Color.Gray else MaterialTheme.colorScheme.onSecondaryContainer,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -773,7 +856,6 @@ fun ShoppingItemRow(item: ShoppingItem, onToggle: () -> Unit, onDelete: () -> Un
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddShoppingItemDialog(
     onDismiss: () -> Unit,
@@ -787,101 +869,149 @@ fun AddShoppingItemDialog(
 
     val units = listOf("u", "kg", "paquetes", "litros", "rollos")
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Añadir Artículo a Compras", fontWeight = FontWeight.Bold) },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .imePadding(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxSize()
+                    .padding(24.dp)
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre del Producto") },
-                    placeholder = { Text("ej. Leche Entera, Papel Higiénico") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                // Header
+                Text(
+                    text = "Añadir Artículo a Compras",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Scrollable Body
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     OutlinedTextField(
-                        value = quantity,
-                        onValueChange = { quantity = it },
-                        label = { Text("Cantidad") },
-                        modifier = Modifier.weight(1f),
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nombre del Producto") },
+                        placeholder = { Text("ej. Leche Entera, Papel Higiénico") },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
 
-                    Column(modifier = Modifier.weight(1.2f)) {
-                        Text("Unidad", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 2.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                .clickable {
-                                    val index = units.indexOf(unit)
-                                    unit = units[(index + 1) % units.size]
-                                }
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(unit, style = MaterialTheme.typography.bodyLarge)
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = targetStore,
-                    onValueChange = { targetStore = it },
-                    label = { Text("Tienda recomendada (Opcional)") },
-                    placeholder = { Text("ej. Walmart, Mercadona") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                if (suggestedStores.isNotEmpty()) {
-                    Text("De tus tiendas habituales:", style = MaterialTheme.typography.labelSmall)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        suggestedStores.take(3).forEach { store ->
-                            SuggestionChip(
-                                onClick = { targetStore = store },
-                                label = { Text(store, fontSize = 10.sp) }
+                        OutlinedTextField(
+                            value = quantity,
+                            onValueChange = { quantity = it },
+                            label = { Text("Cantidad") },
+                            placeholder = { Text("1") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        // Unit Selector Button
+                        Column(modifier = Modifier.weight(1.2f)) {
+                            Text(
+                                "Unidad",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 4.dp)
                             )
+                            OutlinedButton(
+                                onClick = {
+                                    val index = units.indexOf(unit)
+                                    unit = units[(index + 1) % units.size]
+                                },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(unit, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = targetStore,
+                        onValueChange = { targetStore = it },
+                        label = { Text("Tienda Recomendada (Opcional)") },
+                        placeholder = { Text("ej. Jumbo, Walmart") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    // Suggested stores chips (scrollable and responsive to avoid cut-offs)
+                    if (suggestedStores.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "De tus tiendas habituales:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                suggestedStores.forEach { store ->
+                                    SuggestionChip(
+                                        onClick = { targetStore = store },
+                                        label = { Text(store, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val qtyVal = quantity.toDoubleOrNull() ?: 1.0
-                    if (name.isNotBlank()) {
-                        onAdd(name, qtyVal, unit, if (targetStore.isNotBlank()) targetStore else null)
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footer
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancelar")
                     }
-                },
-                enabled = name.isNotBlank() && quantity.toDoubleOrNull() != null
-            ) {
-                Text("Añadir")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val qtyVal = quantity.toDoubleOrNull() ?: 1.0
+                            if (name.isNotBlank()) {
+                                onAdd(name, qtyVal, unit, if (targetStore.isNotBlank()) targetStore else null)
+                            }
+                        },
+                        enabled = name.isNotBlank() && (quantity.isBlank() || quantity.toDoubleOrNull() != null),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Añadir")
+                    }
+                }
             }
         }
-    )
+    }
 }

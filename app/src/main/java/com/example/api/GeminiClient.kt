@@ -47,7 +47,7 @@ object GeminiClient {
      */
     suspend fun parseReceiptWithAi(
         rawText: String,
-        modelName: String = "gemini-3.1-flash-lite"
+        modelName: String = "gemini-3.5-flash"
     ): ParsedReceipt = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
 
@@ -95,18 +95,10 @@ object GeminiClient {
             }
             put("contents", contentsArray)
 
-            // Suggest system instructions & json response format
-            val generationConfig = JSONObject().apply {
-                val responseFormat = JSONObject().apply {
-                    val responseFormatText = JSONObject().apply {
-                        put("mimeType", "application/json")
-                    }
-                    put("text", responseFormatText)
-                }
-                put("responseFormat", responseFormat)
+            put("generationConfig", JSONObject().apply {
+                put("responseMimeType", "application/json")
                 put("temperature", 0.1)
-            }
-            put("generationConfig", generationConfig)
+            })
         }
 
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"

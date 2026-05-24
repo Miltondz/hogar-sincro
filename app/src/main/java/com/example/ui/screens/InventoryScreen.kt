@@ -1,20 +1,22 @@
 package com.example.ui.screens
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -23,239 +25,376 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.InventoryItem
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
 import com.example.data.ExtractedLarderItem
+import com.example.data.InventoryItem
 import com.example.ui.HomeViewModel
+import java.io.File
 import java.util.Locale
 
 @Composable
 fun InventoryScreen(viewModel: HomeViewModel) {
     val context = LocalContext.current
     val items by viewModel.inventoryItems.collectAsState()
-    val lowStockItems by viewModel.lowStockItems.collectAsState()
+    val depletedItems by viewModel.lowStockItems.collectAsState() // stock = 0
 
-    // Gemini Larder Scanner state flows
     val isScanningLarder by viewModel.isScanningLarder.collectAsState()
     val larderScanResult by viewModel.larderScanResult.collectAsState()
 
-    // Local dialog triggers
     var showAddItemDialog by remember { mutableStateOf(false) }
     var itemToEdit by remember { mutableStateOf<InventoryItem?>(null) }
     var itemToDelete by remember { mutableStateOf<InventoryItem?>(null) }
+    var showLarderSourceDialog by remember { mutableStateOf(false) }
 
-    // Photo Picker launcher for Larder
-    val larderPhotoPickerLauncher = rememberLauncherForActivityResult(
+    // Checkbox selection state: itemId -> quantity to buy
+    val selectedForShopping = remember { mutableStateMapOf<Int, Double>() }
+    val hasSelection = selectedForShopping.isNotEmpty()
+
+    // Stable camera URI for larder scanner
+    val cameraPhotoUri = remember {
+        val dir = File(context.cacheDir, "camera_photos").also { it.mkdirs() }
+        val file = File(dir, "larder_capture.jpg")
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+
+    // Gallery launcher for larder
+    val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
-            if (bitmap != null) {
-                viewModel.scanLarderWithGemini(bitmap)
-            }
+            val bmp = decodeSampledBitmapFromUri(context, uri)
+            if (bmp != null) viewModel.scanLarderWithGemini(bmp)
+            else viewModel.showSnackbar("No se pudo leer la imagen.", com.example.ui.SnackbarType.ERROR)
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
+    // Camera launcher for larder
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success) {
+            val bmp = decodeSampledBitmapFromFile(
+                File(context.cacheDir, "camera_photos/larder_capture.jpg").absolutePath
+            )
+            if (bmp != null) viewModel.scanLarderWithGemini(bmp)
+        }
+    }
+
+    // Camera permission launcher
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) cameraLauncher.launch(cameraPhotoUri)
+        else viewModel.showSnackbar("Permiso de cámara requerido.", com.example.ui.SnackbarType.ERROR)
+    }
+
+    fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED) {
+            cameraLauncher.launch(cameraPhotoUri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // Camera/Gallery chooser dialog for larder scanner
+    if (showLarderSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showLarderSourceDialog = false },
+            title = { Text("Escanear Alacena", fontWeight = FontWeight.Bold) },
+            text = { Text("¿Cómo quieres tomar la foto de tu despensa?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLarderSourceDialog = false
+                        launchCamera()
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.CameraAlt, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Cámara")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showLarderSourceDialog = false
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Galería")
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 88.dp, start = 16.dp, end = 16.dp, top = 16.dp),
+            contentPadding = PaddingValues(
+                bottom = if (hasSelection) 140.dp else 88.dp,
+                start = 16.dp, end = 16.dp, top = 16.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Low Stock Overview Card
-            if (lowStockItems.isNotEmpty()) {
+            // ── Depleted alert (stock = 0 only) ──────────────────────────────
+            if (depletedItems.isNotEmpty()) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)), // Soft red
+                        modifier = Modifier.fillMaxWidth().shadow(2.dp, RoundedCornerShape(16.dp)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = Color(0xFFD32F2F)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Alertas de Stock Bajo (${lowStockItems.size})",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFC62828)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Hay artículos de primera necesidad que han caído por debajo del margen mínimo establecido. Agrégalos a tu lista de compras para asegurar reabastecimiento.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFFD32F2F).copy(alpha = 0.8f)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Larder Scanner Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth().testTag("larder_scanner_card"),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AutoAwesome,
+                                imageVector = Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(24.dp)
                             )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Escáner de Alacena con IA",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = "Toma foto a la alacena. Gemini detectará alimentos y stock automáticamente.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            
-                            if (isScanningLarder) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                    Text("Gemini analizando despensa...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                }
-                            } else {
-                                Button(
-                                    onClick = {
-                                        larderPhotoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                    modifier = Modifier.height(36.dp)
-                                ) {
-                                    Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Escanear Foto Alacena", fontSize = 12.sp)
-                                }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${depletedItems.size} artículo(s) agotado(s)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    depletedItems.joinToString(", ") { it.name },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Title
+            // ── Action buttons row: Scan + Add ────────────────────────────────
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { showLarderSourceDialog = true },
+                        modifier = Modifier.weight(1f).height(50.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        enabled = !isScanningLarder
+                    ) {
+                        if (isScanningLarder) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Analizando...", fontSize = 13.sp)
+                        } else {
+                            Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Escanear Alacena", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(
+                        onClick = { showAddItemDialog = true },
+                        modifier = Modifier.weight(1f).height(50.dp).testTag("add_inventory_item_fab"),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Agregar Manual", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // ── Section header ────────────────────────────────────────────────
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Inventario y Despensa Inteligente",
+                        "Despensa (${items.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    
-                    Text(
-                        text = "${items.size} Artículos en total",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
+                    if (hasSelection) {
+                        Text(
+                            "${selectedForShopping.size} seleccionados",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
-            // Products list
+            // ── Empty state ───────────────────────────────────────────────────
             if (items.isEmpty()) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(24.dp),
+                        border = ButtonDefaults.outlinedButtonBorder
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(48.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Inventory2, 
+                                    contentDescription = null, 
+                                    tint = MaterialTheme.colorScheme.primary, 
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Inventario Vacío", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("Agrega los productos habituales de tu despensa para llevar el registro del consumo diario automatizado.", style = MaterialTheme.typography.bodySmall, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            Text(
+                                "Despensa Vacía", 
+                                style = MaterialTheme.typography.titleMedium, 
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "¿Tu alacena está vacía? Escanea tu despensa con Inteligencia Artificial para cargarla en segundos o añade productos manualmente.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 12.dp)
+                            )
                         }
                     }
                 }
             } else {
-                items(items, key = { it.id }) { item ->
-                    InventoryItemRow(
-                        item = item,
-                        onUpdateStock = { newAmt -> viewModel.updateInventoryStock(item, newAmt) },
-                        onAddToShoppingList = { qty -> viewModel.addShoppingItem(item.name, qty, item.unit) },
-                        onQuickConsume = { viewModel.quickConsumeItem(item) },
-                        onArchive = { viewModel.archiveInventoryItem(item) },
-                        onEditClick = { itemToEdit = item },
-                        onDeleteClick = { itemToDelete = item }
-                    )
+                // ── Compact inventory list ────────────────────────────────────
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().shadow(1.dp, RoundedCornerShape(20.dp)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Column {
+                            items.forEachIndexed { index, item ->
+                                CompactInventoryRow(
+                                    item = item,
+                                    isChecked = selectedForShopping.containsKey(item.id),
+                                    checkedQty = selectedForShopping[item.id] ?: 1.0,
+                                    onCheckedChange = { checked ->
+                                        if (checked) selectedForShopping[item.id] = 1.0
+                                        else selectedForShopping.remove(item.id)
+                                    },
+                                    onQtyChange = { qty -> selectedForShopping[item.id] = qty },
+                                    onStockDecrease = {
+                                        val newStock = maxOf(0.0, item.currentStock - 1.0)
+                                        viewModel.updateInventoryStock(item, newStock)
+                                    },
+                                    onStockIncrease = {
+                                        viewModel.updateInventoryStock(item, item.currentStock + 1.0)
+                                    },
+                                    onEditClick = { itemToEdit = item },
+                                    onArchiveClick = { viewModel.archiveInventoryItem(item) },
+                                    onDeleteClick = { itemToDelete = item }
+                                )
+                                if (index < items.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 12.dp),
+                                        thickness = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Add to inventory FAB
-        FloatingActionButton(
-            onClick = { showAddItemDialog = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(bottom = 90.dp, end = 16.dp)
-                .testTag("add_inventory_item_fab"),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
+        // ── Sticky bottom bar when items are selected ─────────────────────────
+        AnimatedVisibility(
+            visible = hasSelection,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = "Añadir Producto")
+            Surface(
+                modifier = Modifier.fillMaxWidth().shadow(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${selectedForShopping.size} artículo(s) seleccionado(s)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = { selectedForShopping.clear() }
+                    ) {
+                        Text("Cancelar", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = {
+                            val selections = selectedForShopping.mapNotNull { (id, qty) ->
+                                items.find { it.id == id }?.let { it to qty }
+                            }
+                            viewModel.addInventoryItemsToShoppingList(selections)
+                            selectedForShopping.clear()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(Icons.Default.ShoppingCart, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Añadir a Compras", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
 
-        // Add Dialog
+        // ── Dialogs ───────────────────────────────────────────────────────────
         if (showAddItemDialog) {
             AddInventoryItemDialog(
                 onDismiss = { showAddItemDialog = false },
@@ -266,7 +405,6 @@ fun InventoryScreen(viewModel: HomeViewModel) {
             )
         }
 
-        // Edit Dialog
         if (itemToEdit != null) {
             EditInventoryItemDialog(
                 item = itemToEdit!!,
@@ -278,115 +416,105 @@ fun InventoryScreen(viewModel: HomeViewModel) {
             )
         }
 
-        // Delete Confirm Dialog
         if (itemToDelete != null) {
             AlertDialog(
                 onDismissRequest = { itemToDelete = null },
-                title = { Text("Eliminar Producto") },
-                text = { Text("¿Estás seguro de que deseas eliminar permanentemente '${itemToDelete!!.name}' del inventario?") },
+                title = { Text("Eliminar Producto", fontWeight = FontWeight.Bold) },
+                text = { Text("¿Eliminar permanentemente '${itemToDelete!!.name}'?") },
                 confirmButton = {
                     Button(
                         onClick = {
                             viewModel.deleteInventoryItem(itemToDelete!!)
                             itemToDelete = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Eliminar")
-                    }
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Eliminar") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { itemToDelete = null }) {
-                        Text("Cancelar")
-                    }
-                }
+                    TextButton(onClick = { itemToDelete = null }) { Text("Cancelar") }
+                },
+                shape = RoundedCornerShape(20.dp)
             )
         }
 
-        // Larder Verification Tray (Bandeja de verificación de alacena)
+        // Larder scan verification tray
         if (larderScanResult != null) {
-            var confirmedList by remember(larderScanResult) { mutableStateOf(larderScanResult ?: emptyList()) }
-
+            var confirmedList by remember(larderScanResult) {
+                mutableStateOf(larderScanResult ?: emptyList())
+            }
             AlertDialog(
                 onDismissRequest = { viewModel.clearLarderScanResult() },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Alimentos Detectados por Gemini")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Alimentos Detectados", fontWeight = FontWeight.Bold)
                     }
                 },
                 text = {
-                    Column(modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                         Text(
-                            text = "Por favor confirma o modifica las cantidades extraídas de la foto antes de guardarlas.",
+                            "Revisa y ajusta las cantidades antes de importar.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray,
-                            modifier = Modifier.padding(bottom = 12.dp)
+                            modifier = Modifier.padding(bottom = 10.dp)
                         )
-                        
                         LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             items(confirmedList.size) { index ->
                                 val scanItem = confirmedList[index]
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
+                                    Text(
+                                        scanItem.name,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Row(
-                                        modifier = Modifier.fillMaxWidth().padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(scanItem.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            Text("Unidad: ${scanItem.unit}", fontSize = 10.sp, color = Color.Gray)
-                                        }
-
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            IconButton(
-                                                onClick = {
-                                                    val updated = confirmedList.toMutableList()
-                                                    val newQty = Math.max(0.0, scanItem.quantity - 1.0)
-                                                    updated[index] = scanItem.copy(quantity = newQty)
-                                                    confirmedList = updated
-                                                },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(Icons.Default.Remove, null, modifier = Modifier.size(14.dp))
-                                            }
-
-                                            Text(
-                                                text = "${scanItem.quantity}",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                modifier = Modifier.padding(horizontal = 4.dp)
-                                            )
-
-                                            IconButton(
-                                                onClick = {
-                                                    val updated = confirmedList.toMutableList()
-                                                    updated[index] = scanItem.copy(quantity = scanItem.quantity + 1.0)
-                                                    confirmedList = updated
-                                                },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp))
-                                            }
-
-                                            IconButton(
-                                                onClick = {
-                                                    val updated = confirmedList.toMutableList()
-                                                    updated.removeAt(index)
-                                                    confirmedList = updated
-                                                },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
-                                            }
-                                        }
+                                        IconButton(
+                                            onClick = {
+                                                val updated = confirmedList.toMutableList()
+                                                updated[index] = scanItem.copy(quantity = maxOf(0.0, scanItem.quantity - 1.0))
+                                                confirmedList = updated
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(14.dp)) }
+                                        Text(
+                                            "${scanItem.quantity.toInt()} ${scanItem.unit}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.widthIn(min = 36.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                val updated = confirmedList.toMutableList()
+                                                updated[index] = scanItem.copy(quantity = scanItem.quantity + 1.0)
+                                                confirmedList = updated
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp)) }
+                                        IconButton(
+                                            onClick = {
+                                                confirmedList = confirmedList.toMutableList().also { it.removeAt(index) }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp)) }
                                     }
                                 }
                             }
@@ -395,281 +523,204 @@ fun InventoryScreen(viewModel: HomeViewModel) {
                 },
                 confirmButton = {
                     Button(
-                        onClick = {
-                            viewModel.commitLarderScanItems(confirmedList)
-                        }
-                    ) {
-                        Text("Confirmar e Incorporar")
-                    }
+                        onClick = { viewModel.commitLarderScanItems(confirmedList) },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Importar Todo") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { viewModel.clearLarderScanResult() }) {
-                        Text("Descartar")
-                    }
-                }
+                    TextButton(onClick = { viewModel.clearLarderScanResult() }) { Text("Descartar") }
+                },
+                shape = RoundedCornerShape(20.dp)
             )
         }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Compact single-row inventory item
+// ─────────────────────────────────────────────────────────────────────────────
 @Composable
-fun InventoryItemRow(
+fun CompactInventoryRow(
     item: InventoryItem,
-    onUpdateStock: (Double) -> Unit,
-    onAddToShoppingList: (Double) -> Unit,
-    onQuickConsume: () -> Unit,
-    onArchive: () -> Unit,
+    isChecked: Boolean,
+    checkedQty: Double,
+    onCheckedChange: (Boolean) -> Unit,
+    onQtyChange: (Double) -> Unit,
+    onStockDecrease: () -> Unit,
+    onStockIncrease: () -> Unit,
     onEditClick: () -> Unit,
+    onArchiveClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    val isLowStock = item.currentStock <= item.minStockAlert
-    val isSoonDepleting = item.daysUntilDepletion in 1..4
+    val isDepleted = item.currentStock == 0.0
     var showMenu by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!isChecked) }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = item.name,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        if (isLowStock) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFFFFCDD2))
-                                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "STOCK BAJO",
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFC62828)
-                                )
-                            }
-                        }
-                    }
-                    
-                    Text(
-                        text = "Consumo: ${item.depletionRatePerDay} ${item.unit}/día",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                }
-
-                // Interactive Stock Controller & Quick Consume
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    IconButton(
-                        onClick = { if (item.currentStock >= 0.1) onUpdateStock(Math.max(0.0, String.format(Locale.US, "%.2f", item.currentStock - 0.2).toDouble())) },
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Menos stock", modifier = Modifier.size(14.dp))
-                    }
-
-                    Text(
-                        text = "${item.currentStock} ${item.unit}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-
-                    IconButton(
-                        onClick = { onUpdateStock(String.format(Locale.US, "%.2f", item.currentStock + 0.2).toDouble()) },
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Más stock", modifier = Modifier.size(14.dp))
-                    }
-
-                    // Prominent Quick Consume button (-1 unit)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Button(
-                        onClick = onQuickConsume,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Text("-1 u", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // Options Dropdown trigger (three dots)
-                    Box {
-                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Opciones", tint = Color.Gray)
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("Editar") } },
-                                onClick = { showMenu = false; onEditClick() }
-                            )
-                            DropdownMenuItem(
-                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Archive, null, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("Archivar") } },
-                                onClick = { showMenu = false; onArchive() }
-                            )
-                            Divider()
-                            DropdownMenuItem(
-                                text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp)); Spacer(modifier = Modifier.width(8.dp)); Text("Eliminar", color = MaterialTheme.colorScheme.error) } },
-                                onClick = { showMenu = false; onDeleteClick() }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Depletion Gauge Indicator
-            val percentage = if (item.currentStock > 0 && item.minStockAlert > 0) {
-                val ratio = (item.currentStock / (item.minStockAlert * 3)).toFloat()
-                ratio.coerceIn(0f, 1f)
-            } else 0f
-
-            val gaugeColor = when {
-                isLowStock -> Color(0xFFD32F2F)      // Red
-                isSoonDepleting -> Color(0xFFFF9800) // Orange
-                else -> Color(0xFF4CAF50)            // Green
-            }
-
-            LinearProgressIndicator(
-                progress = percentage,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = gaugeColor,
-                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            // Checkbox
+            Checkbox(
+                checked = isChecked,
+                onCheckedChange = onCheckedChange,
+                modifier = Modifier.size(24.dp),
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary
+                )
             )
+            Spacer(Modifier.width(8.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Depletion Counter Info & Prices comparative row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Depletion estimation statement
+            // Name + depleted badge
+            Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Timer,
-                        contentDescription = null,
-                        tint = gaugeColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = when {
-                            item.daysUntilDepletion > 30 -> "Abastecido (~${item.daysUntilDepletion} días)"
-                            item.daysUntilDepletion > 0 -> "Se agota en aprox. ${item.daysUntilDepletion} días"
-                            item.currentStock == 0.0 -> "¡AGOTADO!"
-                            else -> "Uso ocasional"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = gaugeColor
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                }
-
-                if (isLowStock) {
-                    TextButton(
-                        onClick = { onAddToShoppingList(item.minStockAlert * 3 - item.currentStock) },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Añadir a Compras", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (isDepleted) {
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.error)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("AGOTADO", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
-            }
-
-            // BEST STORES CATALOGUE DISPLAY
-            if (item.bestStore != null && item.bestPrice != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Price/store in one line (only if set)
+                if (item.bestStore != null && item.bestPrice != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "🏷️ Historial de Precios Habituales:",
+                        text = "🏪 ${item.bestStore}  •  $${String.format(Locale.US, "%.2f", item.bestPrice)}/${item.unit}",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.Gray,
-                        fontWeight = FontWeight.SemiBold
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Storefront, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${item.bestStore}: ",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "$${String.format(Locale.US, "%.2f", item.bestPrice)}/${item.unit} (Mejor)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF4CAF50),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        if (item.secondBestStore != null && item.secondBestPrice != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(12.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "${item.secondBestStore}: ",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.Gray
-                                )
-                                Text(
-                                    text = "$${String.format(Locale.US, "%.2f", item.secondBestPrice)}/${item.unit}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                    }
                 }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            // Stock control: − stock + (small)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onStockDecrease,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Remove, null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = "${
+                        if (item.currentStock % 1.0 == 0.0)
+                            item.currentStock.toInt().toString()
+                        else
+                            String.format(Locale.US, "%.1f", item.currentStock)
+                    } ${item.unit}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.widthIn(min = 40.dp),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+                IconButton(
+                    onClick = onStockIncrease,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Add, null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Context menu (⋮)
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(16.dp), tint = Color.Gray)
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Editar")
+                            }
+                        },
+                        onClick = { showMenu = false; onEditClick() }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Archive, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Archivar")
+                            }
+                        },
+                        onClick = { showMenu = false; onArchiveClick() }
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        onClick = { showMenu = false; onDeleteClick() }
+                    )
+                }
+            }
+        }
+
+        // Quantity field when checked (shown inline below the row)
+        AnimatedVisibility(visible = isChecked) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 32.dp, top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Cantidad a comprar:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                IconButton(
+                    onClick = { if (checkedQty > 1) onQtyChange(checkedQty - 1) },
+                    modifier = Modifier.size(26.dp)
+                ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(12.dp)) }
+                Text(
+                    "${checkedQty.toInt()} ${item.unit}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                IconButton(
+                    onClick = { onQtyChange(checkedQty + 1) },
+                    modifier = Modifier.size(26.dp)
+                ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(12.dp)) }
             }
         }
     }
@@ -682,149 +733,159 @@ fun AddInventoryItemDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var stock by remember { mutableStateOf("") }
-    var minStock by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("u") }
-    var depletionRate by remember { mutableStateOf("") }
     var bestStore by remember { mutableStateOf("") }
     var bestPrice by remember { mutableStateOf("") }
 
-    val units = listOf("u", "kg", "paquetes", "litros", "rollos")
+    val units = listOf("u", "kg", "g", "paquetes", "litros", "ml", "rollos")
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Registrar Producto en Despensa", fontWeight = FontWeight.Bold) },
-        text = {
-            LazyColumn(
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .imePadding(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxSize()
+                    .padding(24.dp)
             ) {
-                item {
+                // Header Fijo
+                Text(
+                    text = "Nuevo Producto en Despensa",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Cuerpo Scrollable
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
                         label = { Text("Nombre del Producto") },
+                        placeholder = { Text("ej. Leche Entera, Arroz Integral") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
-                }
 
-                item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedTextField(
                             value = stock,
                             onValueChange = { stock = it },
                             label = { Text("Stock Actual") },
+                            placeholder = { Text("0") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         )
 
-                        OutlinedTextField(
-                            value = minStock,
-                            onValueChange = { minStock = it },
-                            label = { Text("Stock Mínimo") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Unidad", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 2.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .clickable {
-                                        val index = units.indexOf(unit)
-                                        unit = units[(index + 1) % units.size]
-                                    }
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                        // Unit cycle button
+                        Column(modifier = Modifier.weight(1.2f)) {
+                            Text(
+                                text = "Unidad",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    val i = units.indexOf(unit)
+                                    unit = units[(i + 1) % units.size]
+                                },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text(unit, style = MaterialTheme.typography.bodyLarge)
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                Text(unit, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
                             }
                         }
+                    }
 
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                    Text(
+                        text = "Detalles de Compra (Opcional)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         OutlinedTextField(
-                            value = depletionRate,
-                            onValueChange = { depletionRate = it },
-                            label = { Text("Uso Diario Promedio") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            value = bestStore,
+                            onValueChange = { bestStore = it },
+                            label = { Text("Tienda Habitual") },
+                            placeholder = { Text("ej. Jumbo") },
                             modifier = Modifier.weight(1.2f),
                             shape = RoundedCornerShape(12.dp)
                         )
-                    }
-                }
 
-                item {
-                    OutlinedTextField(
-                        value = bestStore,
-                        onValueChange = { bestStore = it },
-                        label = { Text("Tienda con mejor precio") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = bestPrice,
-                        onValueChange = { bestPrice = it },
-                        label = { Text("Precio Unitario ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val stockVal = stock.toDoubleOrNull() ?: 0.0
-                    val minVal = minStock.toDoubleOrNull() ?: 1.0
-                    val rateVal = depletionRate.toDoubleOrNull() ?: 0.1
-                    val priceVal = bestPrice.toDoubleOrNull()
-
-                    if (name.isNotBlank()) {
-                        onAdd(
-                            name, 
-                            stockVal, 
-                            minVal, 
-                            unit, 
-                            rateVal, 
-                            if (bestStore.isNotBlank()) bestStore else null, 
-                            priceVal
+                        OutlinedTextField(
+                            value = bestPrice,
+                            onValueChange = { bestPrice = it },
+                            label = { Text("Precio ($)") },
+                            placeholder = { Text("0.00") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
                         )
                     }
-                },
-                enabled = name.isNotBlank() && stock.toDoubleOrNull() != null
-            ) {
-                Text("Guardar")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footer Fijo
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancelar")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val stockVal = stock.toDoubleOrNull() ?: 0.0
+                            if (name.isNotBlank() && stockVal >= 0) {
+                                onAdd(
+                                    name.trim(), stockVal, 0.0, unit, 0.0,
+                                    bestStore.ifBlank { null },
+                                    bestPrice.toDoubleOrNull()
+                                )
+                            }
+                        },
+                        enabled = name.isNotBlank() && (stock.isBlank() || stock.toDoubleOrNull() != null),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Agregar")
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -835,25 +896,48 @@ fun EditInventoryItemDialog(
 ) {
     var name by remember { mutableStateOf(item.name) }
     var stock by remember { mutableStateOf(item.currentStock.toString()) }
-    var minStock by remember { mutableStateOf(item.minStockAlert.toString()) }
     var unit by remember { mutableStateOf(item.unit) }
-    var depletionRate by remember { mutableStateOf(item.depletionRatePerDay.toString()) }
     var bestStore by remember { mutableStateOf(item.bestStore ?: "") }
     var bestPrice by remember { mutableStateOf(item.bestPrice?.toString() ?: "") }
 
-    val units = listOf("u", "kg", "paquetes", "litros", "rollos")
+    val units = listOf("u", "kg", "g", "paquetes", "litros", "ml", "rollos")
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Editar Producto de la Despensa", fontWeight = FontWeight.Bold) },
-        text = {
-            LazyColumn(
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .imePadding(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxSize()
+                    .padding(24.dp)
             ) {
-                item {
+                // Header Fijo
+                Text(
+                    text = "Editar Producto",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Cuerpo Scrollable
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
@@ -861,12 +945,10 @@ fun EditInventoryItemDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
-                }
 
-                item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedTextField(
                             value = stock,
@@ -877,10 +959,53 @@ fun EditInventoryItemDialog(
                             shape = RoundedCornerShape(12.dp)
                         )
 
+                        // Unit cycle button
+                        Column(modifier = Modifier.weight(1.2f)) {
+                            Text(
+                                text = "Unidad",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    val i = units.indexOf(unit)
+                                    unit = units[(i + 1) % units.size]
+                                },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(unit, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                    Text(
+                        text = "Detalles de Compra (Opcional)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         OutlinedTextField(
-                            value = minStock,
-                            onValueChange = { minStock = it },
-                            label = { Text("Stock Mínimo") },
+                            value = bestStore,
+                            onValueChange = { bestStore = it },
+                            label = { Text("Tienda Habitual") },
+                            modifier = Modifier.weight(1.2f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = bestPrice,
+                            onValueChange = { bestPrice = it },
+                            label = { Text("Precio ($)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
@@ -888,94 +1013,36 @@ fun EditInventoryItemDialog(
                     }
                 }
 
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footer Fijo
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancelar")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onConfirm(
+                                name.trim(),
+                                stock.toDoubleOrNull() ?: item.currentStock,
+                                item.minStockAlert, unit,
+                                item.depletionRatePerDay,
+                                bestStore.ifBlank { null },
+                                bestPrice.toDoubleOrNull()
+                            )
+                        },
+                        enabled = name.isNotBlank() && stock.toDoubleOrNull() != null,
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Unidad", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 2.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .clickable {
-                                        val index = units.indexOf(unit)
-                                        unit = units[(index + 1) % units.size]
-                                    }
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(unit, style = MaterialTheme.typography.bodyLarge)
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                            }
-                        }
-
-                        OutlinedTextField(
-                            value = depletionRate,
-                            onValueChange = { depletionRate = it },
-                            label = { Text("Uso Diario Promedio") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                        Text("Guardar")
                     }
                 }
-
-                item {
-                    OutlinedTextField(
-                        value = bestStore,
-                        onValueChange = { bestStore = it },
-                        label = { Text("Tienda con mejor precio") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = bestPrice,
-                        onValueChange = { bestPrice = it },
-                        label = { Text("Precio Unitario ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val stockVal = stock.toDoubleOrNull() ?: 0.0
-                    val minVal = minStock.toDoubleOrNull() ?: 1.0
-                    val rateVal = depletionRate.toDoubleOrNull() ?: 0.1
-                    val priceVal = bestPrice.toDoubleOrNull()
-
-                    if (name.isNotBlank()) {
-                        onConfirm(
-                            name,
-                            stockVal,
-                            minVal,
-                            unit,
-                            rateVal,
-                            if (bestStore.isNotBlank()) bestStore else null,
-                            priceVal
-                        )
-                    }
-                },
-                enabled = name.isNotBlank() && stock.toDoubleOrNull() != null
-            ) {
-                Text("Guardar Cambios")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
             }
         }
-    )
+    }
 }

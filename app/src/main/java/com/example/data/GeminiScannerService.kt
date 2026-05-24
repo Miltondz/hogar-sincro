@@ -46,7 +46,7 @@ object GeminiScannerService {
      */
     suspend fun scanReceipt(
         bitmap: Bitmap?,
-        modelName: String = "gemini-3.1-flash-lite",
+        modelName: String = "gemini-3.5-flash",
         sampleType: String? = null
     ): ExtractedReceipt = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
@@ -212,7 +212,7 @@ object GeminiScannerService {
 
     suspend fun scanLarder(
         bitmap: Bitmap?,
-        modelName: String = "gemini-3.1-flash-lite"
+        modelName: String = "gemini-3.5-flash"
     ): ExtractedLarder = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val isDefaultKey = apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()
@@ -325,7 +325,7 @@ object GeminiScannerService {
 
     suspend fun scanProductPrice(
         bitmap: Bitmap?,
-        modelName: String = "gemini-3.1-flash-lite"
+        modelName: String = "gemini-3.5-flash"
     ): ExtractedProductPrice = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val isDefaultKey = apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()

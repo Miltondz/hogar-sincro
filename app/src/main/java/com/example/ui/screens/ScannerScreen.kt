@@ -1,11 +1,13 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,7 +15,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,7 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.example.ui.HomeViewModel
+import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.delay
 
@@ -56,23 +59,52 @@ fun ScannerScreen(viewModel: HomeViewModel) {
     val isScanning by viewModel.isScanning.collectAsState()
     val scanResult by viewModel.scanResult.collectAsState()
 
-    // State for selected image
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    // State for selected image — reset every new scan session
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showSourceDialog by remember { mutableStateOf(false) }
     var showExplanationDialog by remember { mutableStateOf(false) }
 
-    // Photo Picker launcher (Android Photo Picker API — no permissions needed)
-    val photoPickerLauncher = rememberLauncherForActivityResult(
+    // Create a stable temp URI for camera capture (once per composition)
+    val cameraPhotoUri = remember {
+        val dir = File(context.cacheDir, "camera_photos").also { it.mkdirs() }
+        val file = File(dir, "ticket_capture.jpg")
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+
+    // --- Gallery launcher ---
+    val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
-        selectedImageUri = uri
         if (uri != null) {
-            // Decode Uri -> Bitmap to send to Gemini
-            val inputStream = context.contentResolver.openInputStream(uri)
-            selectedBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
+            val bmp = decodeSampledBitmapFromUri(context, uri)
+            if (bmp != null) selectedBitmap = bmp
+            else viewModel.showSnackbar("No se pudo leer la imagen.", com.example.ui.SnackbarType.ERROR)
+        }
+    }
+
+    // --- Camera launcher ---
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success) {
+            val file = File(context.cacheDir, "camera_photos/ticket_capture.jpg")
+            selectedBitmap = decodeSampledBitmapFromFile(file.absolutePath)
+        }
+    }
+
+    // --- Camera permission launcher ---
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) cameraLauncher.launch(cameraPhotoUri)
+    }
+
+    fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED) {
+            cameraLauncher.launch(cameraPhotoUri)
         } else {
-            selectedBitmap = null
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -89,6 +121,48 @@ fun ScannerScreen(viewModel: HomeViewModel) {
         }
     }
 
+    // Camera/Gallery chooser dialog
+    if (showSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showSourceDialog = false },
+            title = {
+                Text("Seleccionar imagen", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("¿Cómo quieres obtener la foto del ticket?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSourceDialog = false
+                        launchCamera()
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Cámara")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showSourceDialog = false
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Galería")
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -97,11 +171,13 @@ fun ScannerScreen(viewModel: HomeViewModel) {
         contentPadding = PaddingValues(bottom = 88.dp, start = 16.dp, end = 16.dp, top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Explanatory Banner
+        // Header banner
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                ),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Row(
@@ -125,7 +201,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = "Selecciona una foto de tu galería de recibos, facturas o tickets. Gemini extraerá automáticamente los productos, precios e importes para añadirlos a tu despensa y gastos del mes.",
+                            text = "Toma una foto con la cámara o selecciona desde la galería. Gemini extraerá productos, precios e importes automáticamente.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
@@ -134,8 +210,8 @@ fun ScannerScreen(viewModel: HomeViewModel) {
             }
         }
 
-        // Image selector / viewfinder panel
-        if (scanResult == null && !isScanning) {
+        // Image picker / preview panel (only when NOT scanning and NO result)
+        if (!isScanning && scanResult == null) {
             item {
                 Text(
                     text = "Foto del Ticket o Factura",
@@ -144,16 +220,13 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                 )
             }
 
+            // Image viewfinder card
             item {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp)
-                        .clickable {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
+                        .height(260.dp)
+                        .clickable { showSourceDialog = true },
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (selectedBitmap != null) Color.Black
@@ -162,20 +235,18 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (selectedBitmap != null) {
-                            // Show selected image as thumbnail
                             Image(
                                 bitmap = selectedBitmap!!.asImageBitmap(),
                                 contentDescription = "Imagen seleccionada",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
-                            // Dark overlay with "Change image" indicator
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.35f))
+                                    .background(Color.Black.copy(alpha = 0.3f))
                             )
-                            // Top-right "change" badge
+                            // "Change" badge
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
@@ -185,22 +256,12 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Cambiar",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                                    Icon(Icons.Default.Edit, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Cambiar", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
-                            // Bottom "ready to scan" label
+                            // "Ready" badge
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
@@ -210,23 +271,13 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                     .padding(horizontal = 14.dp, vertical = 8.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = Color.Green,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Imagen lista • Pulsa Escanear",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
+                                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Imagen lista • Pulsa Escanear", color = Color.White, fontSize = 12.sp)
                                 }
                             }
                         } else {
-                            // Empty state — invite to pick a photo
+                            // Empty state
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -257,65 +308,53 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Selecciona un ticket, recibo o factura\ndesde tu galería de fotos",
+                                    text = "Usa la cámara o elige desde la galería",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     textAlign = TextAlign.Center
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(20.dp))
+                                // Source buttons inline
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    AssistChip(
+                                    FilledTonalButton(
+                                        onClick = { launchCamera() },
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(Icons.Default.CameraAlt, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Cámara", fontSize = 13.sp)
+                                    }
+                                    OutlinedButton(
                                         onClick = {
-                                            photoPickerLauncher.launch(
+                                            galleryLauncher.launch(
                                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                             )
                                         },
-                                        label = { Text("Galería", fontSize = 12.sp) },
-                                        leadingIcon = {
-                                            Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.dp))
-                                        }
-                                    )
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Galería", fontSize = 13.sp)
+                                    }
                                 }
                             }
-
-                            // Corner brackets (scanner frame decoration)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(12.dp)
-                                    .size(24.dp)
-                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(topStart = 8.dp))
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(12.dp)
-                                    .size(24.dp)
-                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(topEnd = 8.dp))
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(12.dp)
-                                    .size(24.dp)
-                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(bottomStart = 8.dp))
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(12.dp)
-                                    .size(24.dp)
-                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(bottomEnd = 8.dp))
-                            )
+                            // Corner frame brackets
+                            Box(modifier = Modifier.align(Alignment.TopStart).padding(12.dp).size(24.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 8.dp)))
+                            Box(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(24.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(topEnd = 8.dp)))
+                            Box(modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).size(24.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(bottomStart = 8.dp)))
+                            Box(modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(24.dp)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(bottomEnd = 8.dp)))
                         }
                     }
                 }
             }
 
-            // Scan trigger button (enabled only when image is selected)
+            // Action buttons
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -326,9 +365,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             if (selectedBitmap != null) {
                                 viewModel.scanTicketWithGemini(selectedBitmap, null)
                             } else {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
+                                showSourceDialog = true
                             }
                         },
                         modifier = Modifier
@@ -340,25 +377,21 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             containerColor = if (selectedBitmap != null)
                                 MaterialTheme.colorScheme.primary
                             else
-                                MaterialTheme.colorScheme.secondaryContainer
+                                MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = if (selectedBitmap != null)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     ) {
                         Icon(
-                            imageVector = if (selectedBitmap != null) Icons.Default.AutoAwesome else Icons.Default.PhotoLibrary,
-                            contentDescription = null,
-                            tint = if (selectedBitmap != null)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSecondaryContainer
+                            imageVector = if (selectedBitmap != null) Icons.Default.AutoAwesome else Icons.Default.AddPhotoAlternate,
+                            contentDescription = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (selectedBitmap != null) "Escanear con IA de Gemini" else "Seleccionar Foto",
-                            fontWeight = FontWeight.Bold,
-                            color = if (selectedBitmap != null)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSecondaryContainer
+                            text = if (selectedBitmap != null) "Escanear con Gemini IA" else "Seleccionar Foto",
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
@@ -375,7 +408,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
             }
         }
 
-        // Analysis state loader
+        // Loading state
         if (isScanning) {
             item {
                 Card(
@@ -406,9 +439,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                         Spacer(modifier = Modifier.height(8.dp))
                         AnimatedContent(
                             targetState = funnyMessage,
-                            transitionSpec = {
-                                fadeIn() togetherWith fadeOut()
-                            },
+                            transitionSpec = { fadeIn() togetherWith fadeOut() },
                             label = "funny_message"
                         ) { msg ->
                             Text(
@@ -423,7 +454,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
             }
         }
 
-        // Output scanned result layout drawer
+        // Result section
         if (scanResult != null && !isScanning) {
             val receipt = scanResult!!
             item {
@@ -437,10 +468,8 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-
                     TextButton(onClick = {
                         viewModel.clearScanResult()
-                        selectedImageUri = null
                         selectedBitmap = null
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -454,7 +483,9 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                    )
                 ) {
                     Column(
                         modifier = Modifier
@@ -484,10 +515,9 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Se ha registrado un gasto de ${receipt.category} y se actualizaron los precios más convenientes de cada artículo en tu base de datos del hogar.",
+                            text = "Se registró un gasto de ${receipt.category} y se actualizaron los precios en la despensa.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
@@ -495,7 +525,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                 }
             }
 
-            // The receipt paper card
+            // Receipt paper card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -508,7 +538,6 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             .fillMaxWidth()
                             .padding(20.dp)
                     ) {
-                        // Ticket header
                         Text(
                             text = receipt.storeName.uppercase(),
                             style = MaterialTheme.typography.titleMedium,
@@ -526,11 +555,8 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             fontFamily = FontFamily.Monospace,
                             color = Color.Gray
                         )
-
                         Spacer(modifier = Modifier.height(16.dp))
-                        Divider(color = Color.Black, modifier = Modifier.padding(bottom = 12.dp))
-
-                        // Items
+                        HorizontalDivider(color = Color.Black, modifier = Modifier.padding(bottom = 12.dp))
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -541,7 +567,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = item.name,
                                             style = MaterialTheme.typography.bodySmall,
@@ -550,13 +576,12 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                             color = Color.DarkGray
                                         )
                                         Text(
-                                            text = "${item.quantity} u * $${String.format(Locale.US, "%.2f", item.price)}",
+                                            text = "${item.quantity} u × $${String.format(Locale.US, "%.2f", item.price)}",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = FontFamily.Monospace,
                                             color = Color.Gray
                                         )
                                     }
-
                                     Text(
                                         text = "$${String.format(Locale.US, "%.2f", item.price * item.quantity)}",
                                         style = MaterialTheme.typography.bodySmall,
@@ -567,17 +592,14 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                 }
                             }
                         }
-
-                        Divider(color = Color.Black, modifier = Modifier.padding(vertical = 12.dp))
-
-                        // Total Row
+                        HorizontalDivider(color = Color.Black, modifier = Modifier.padding(vertical = 12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "TOTAL IMP. EXTRAÍDO",
+                                text = "TOTAL EXTRAÍDO",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace,
@@ -594,21 +616,53 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                     }
                 }
             }
+
+            // Scan another button at the bottom
+            item {
+                Button(
+                    onClick = {
+                        viewModel.clearScanResult()
+                        selectedBitmap = null
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(Icons.Default.DocumentScanner, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Escanear Otro Ticket", fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 
+    // Help dialog
     if (showExplanationDialog) {
         AlertDialog(
             onDismissRequest = { showExplanationDialog = false },
-            title = { Text("¿Cómo funciona el scanner?") },
+            title = { Text("¿Cómo funciona el escáner?") },
             text = {
-                Text("Esta sección usa el selector de fotos de Android para que elijas una imagen de tu galería y la envía a Gemini Flash (modelo multimodal) para extraer autónomamente:\n\n1. Nombre Comercial\n2. Consumo por categoría\n3. Lista desglosada con cantidades y precios\n\nLos artículos se registran directamente en los históricos de precios habituales de la sección Despensa, y el total se archiva en tus Gastos Mensuales.")
+                Text(
+                    "Toma una foto con la cámara de tu celular o selecciona una imagen de la galería.\n\n" +
+                    "Gemini Flash analizará el ticket y extraerá:\n\n" +
+                    "1. Nombre del comercio\n" +
+                    "2. Categoría del gasto\n" +
+                    "3. Lista de productos con cantidades y precios\n\n" +
+                    "Los productos se registran en tu despensa y el total se archiva en Gastos Mensuales."
+                )
             },
             confirmButton = {
-                Button(onClick = { showExplanationDialog = false }) {
-                    Text("Entendido")
-                }
-            }
+                Button(
+                    onClick = { showExplanationDialog = false },
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Entendido") }
+            },
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }
