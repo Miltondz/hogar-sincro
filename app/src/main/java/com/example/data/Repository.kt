@@ -58,7 +58,7 @@ class Repository(private val database: AppDatabase) {
     suspend fun prepopulateIfEmpty() {
         // Force complete clean state for Milton & Alejandra
         val settings = syncSettings.first()
-        if (settings == null || !settings.members.contains("Alejandra") || settings.members.contains("Pilar")) {
+        if (settings == null || !settings.members.contains("Alejandra")) {
             // Delete all local data
             clearAllLocalData()
             

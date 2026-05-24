@@ -7,9 +7,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -18,8 +20,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -31,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.Expense
 import com.example.ui.HomeViewModel
 import com.example.NavigationTab
@@ -67,83 +72,96 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
             contentPadding = PaddingValues(bottom = 88.dp, start = 16.dp, end = 16.dp, top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Summary Card (Aesthetic, high negative space, clear summary of spending)
+            // Summary Card (Premium Gradient background, elegant design)
             item {
+                val budgetGradient = Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary,
+                        Color(0xFF00388F)
+                    )
+                )
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .shadow(6.dp, RoundedCornerShape(24.dp))
                         .testTag("summary_card"),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
                     shape = RoundedCornerShape(24.dp)
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
+                            .background(budgetGradient)
                             .fillMaxWidth()
-                            .padding(24.dp)
                     ) {
-                        Text(
-                            text = "Presupuesto Mensual",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "$${String.format(Locale.US, "%,.2f", totalExpenses)}",
-                            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Divider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp)
                         ) {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Event,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Presupuesto Mensual",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "$${String.format(Locale.US, "%,.2f", totalExpenses)}",
+                                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Black),
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Event,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Gastos Recurrentes",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
                                     Text(
-                                        text = "Gastos Recurrentes",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                        text = "$${String.format(Locale.US, "%,.2f", recurringSum)}",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = Color.White
                                     )
                                 }
-                                Text(
-                                    text = "$${String.format(Locale.US, "%,.2f", recurringSum)}",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.ShoppingCart,
-                                        contentDescription = null,
-                                        tint = Color(0xFFE91E63),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.ShoppingCart,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFF80AB), // Soft pink
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Gastos Variables",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
                                     Text(
-                                        text = "Gastos Variables",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                        text = "$${String.format(Locale.US, "%,.2f", variableSum)}",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = Color.White
                                     )
                                 }
-                                Text(
-                                    text = "$${String.format(Locale.US, "%,.2f", variableSum)}",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
                             }
                         }
                     }
@@ -153,87 +171,94 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
             // Beautiful segmented bar representing categories
             if (expenses.isNotEmpty() && totalExpenses > 0) {
                 item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Text(
-                            text = "Distribución de Gastos",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        // Drawn custom progress indicators
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(16.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.LightGray.copy(alpha = 0.2f))
+                                .padding(20.dp)
                         ) {
+                            Text(
+                                text = "Distribución de Gastos",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+                            
+                            // Custom progress indicator bar
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(16.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.LightGray.copy(alpha = 0.2f))
+                            ) {
+                                val sortedCategories = categoryTotals.entries.sortedByDescending { it.value }
+                                val colors = listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    Color(0xFF00BCD4), // cyan
+                                    Color(0xFFFF9800), // orange
+                                    Color(0xFF9C27B0), // purple
+                                    Color(0xFF4CAF50)  // green
+                                )
+
+                                sortedCategories.forEachIndexed { index, entry ->
+                                    val proportion = (entry.value / totalExpenses).toFloat()
+                                    if (proportion > 0.01) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxHeight()
+                                                .weight(proportion)
+                                                .background(colors[index % colors.size])
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Category Labels List
                             val sortedCategories = categoryTotals.entries.sortedByDescending { it.value }
                             val colors = listOf(
                                 MaterialTheme.colorScheme.primary,
-                                Color(0xFF00BCD4), // cyan
-                                Color(0xFFFF9800), // orange
-                                Color(0xFF9C27B0), // purple
-                                Color(0xFF4CAF50)  // green
+                                Color(0xFF00BCD4),
+                                Color(0xFFFF9800),
+                                Color(0xFF9C27B0),
+                                Color(0xFF4CAF50)
                             )
-
-                            sortedCategories.forEachIndexed { index, entry ->
-                                val proportion = (entry.value / totalExpenses).toFloat()
-                                if (proportion > 0.01) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxHeight()
-                                            .weight(proportion)
-                                            .background(colors[index % colors.size])
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Category Labels Row
-                        val sortedCategories = categoryTotals.entries.sortedByDescending { it.value }
-                        val colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            Color(0xFF00BCD4),
-                            Color(0xFFFF9800),
-                            Color(0xFF9C27B0),
-                            Color(0xFF4CAF50)
-                        )
-                        
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            sortedCategories.forEachIndexed { index, entry ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(10.dp)
-                                                .clip(CircleShape)
-                                                .background(colors[index % colors.size])
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                            
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                sortedCategories.forEachIndexed { index, entry ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .clip(CircleShape)
+                                                    .background(colors[index % colors.size])
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = entry.key,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
                                         Text(
-                                            text = entry.key,
+                                            text = "$${String.format(Locale.US, "%,.2f", entry.value)} (${String.format(Locale.US, "%.0f", (entry.value/totalExpenses)*100)}%)",
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Medium
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
                                         )
                                     }
-                                    Text(
-                                        text = "$${String.format(Locale.US, "%,.2f", entry.value)} (${String.format(Locale.US, "%.0f", (entry.value/totalExpenses)*100)}%)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
-                                    )
                                 }
                             }
                         }
@@ -246,27 +271,29 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    border = ButtonDefaults.outlinedButtonBorder
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(44.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.secondaryContainer),
+                                .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Analytics,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(16.dp))
@@ -274,10 +301,11 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
                             Text(
                                 text = "Predicción de Fin de Mes",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
-                            val estimatedTotals = totalExpenses + 120.00 // standard overhead estimation
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val estimatedTotals = totalExpenses + 120.00
                             Text(
                                 text = "Proyección de gastos para el mes actual: $${String.format(Locale.US, "%,.2f", estimatedTotals)}. Un 4% menor al promedio histórico anterior debido a precios optimizados.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -293,36 +321,36 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
                 Card(
                     modifier = Modifier.fillMaxWidth().testTag("quick_actions_card"),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+                        containerColor = MaterialTheme.colorScheme.surface
                     ),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Acciones Rápidas del Hogar",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                fontWeight = FontWeight.Bold
                             )
                         }
 
                         Text(
                             text = "Accede rápidamente a las funciones clave de escaneo y abastecimiento del hogar.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         )
 
                         Row(
@@ -335,9 +363,10 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
                                     .weight(1f)
                                     .clickable { onNavigateToTab(NavigationTab.SCANNER) },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                                 ),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(16.dp),
+                                border = ButtonDefaults.outlinedButtonBorder
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -375,9 +404,10 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
                                     .weight(1f)
                                     .clickable { onNavigateToTab(NavigationTab.INVENTORY) },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 ),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(16.dp),
+                                border = ButtonDefaults.outlinedButtonBorder
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -426,12 +456,33 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
             val recurringExpenses = expenses.filter { it.isRecurring }
             if (recurringExpenses.isEmpty()) {
                 item {
-                    Text(
-                        text = "Sin deudas ni servicios recurrentes registrados.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        border = ButtonDefaults.outlinedButtonBorder
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ReceiptLong,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Sin deudas ni servicios recurrentes registrados.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+                        }
+                    }
                 }
             } else {
                 items(recurringExpenses, key = { it.id }) { item ->
@@ -452,12 +503,33 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
             val variableExpenses = expenses.filter { !it.isRecurring }
             if (variableExpenses.isEmpty()) {
                 item {
-                    Text(
-                        text = "No hay consumos variables registrados este mes.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        border = ButtonDefaults.outlinedButtonBorder
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocalGroceryStore,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "No hay consumos variables registrados este mes.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+                        }
+                    }
                 }
             } else {
                 items(variableExpenses, key = { it.id }) { item ->
@@ -499,7 +571,7 @@ fun ExpenseRow(expense: Expense, onDelete: () -> Unit) {
             .padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier
@@ -552,13 +624,14 @@ fun ExpenseRow(expense: Expense, onDelete: () -> Unit) {
                     Text(
                         text = expense.category,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
                     )
                     
                     // Dynamic payment author badge
                     val paidColor = when (expense.paidBy) {
                         "Milton" -> MaterialTheme.colorScheme.primary
-                        "Pilar" -> Color(0xFFE91E63)
+                        "Alejandra" -> Color(0xFFE91E63)
                         "Carlos" -> Color(0xFFFF9800)
                         "Laura" -> Color(0xFF4CAF50)
                         else -> Color(0xFF9C27B0)
@@ -567,13 +640,13 @@ fun ExpenseRow(expense: Expense, onDelete: () -> Unit) {
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
                             .background(paidColor.copy(alpha = 0.12f))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = expense.paidBy,
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
                             color = paidColor
                         )
                     }
@@ -583,13 +656,14 @@ fun ExpenseRow(expense: Expense, onDelete: () -> Unit) {
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(MaterialTheme.colorScheme.secondaryContainer)
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = "Recurrente: ${expense.recurringDueDate}",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontSize = 8.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     } else {
@@ -646,107 +720,172 @@ fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double, String, Bool
 
     val categories = listOf("Alimentos", "Servicio", "Alquiler", "Diverso")
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Registrar Nuevo Gasto", fontWeight = FontWeight.Bold) },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .imePadding(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxSize()
+                    .padding(24.dp)
             ) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Título / Concepto") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                // Header Fijo
+                Text(
+                    text = "Registrar Nuevo Gasto",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                
+                Spacer(modifier = Modifier.height(16.dp))
 
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = { Text("Monto ($)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                // Dropdown representation
-                Text(text = "Categoría", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // Cuerpo Scrollable
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    categories.forEach { cat ->
-                        FilterChip(
-                            selected = category == cat,
-                            onClick = { category = cat },
-                            label = { Text(cat, fontSize = 11.sp) }
-                        )
-                    }
-                }
-
-                // Recurring switch representation (alquiler, servicio)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "Gasto Recurrente",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Para alquileres o facturas fijas",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
-                    }
-                    Switch(
-                        checked = isRecurring,
-                        onCheckedChange = { isRecurring = it }
-                    )
-                }
-
-                if (isRecurring) {
                     OutlinedTextField(
-                        value = recurringDueDate,
-                        onValueChange = { recurringDueDate = it },
-                        label = { Text("Fecha de vencimiento (ej. Día 05)") },
-                        placeholder = { Text("Día 05 de cada mes") },
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Título / Concepto") },
+                        placeholder = { Text("ej. Compra Semanal Jumbo, Factura Luz") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val amtVal = amount.toDoubleOrNull() ?: 0.0
-                    if (title.isNotBlank() && amtVal > 0.0) {
-                        onAdd(
-                            title, 
-                            amtVal, 
-                            category, 
-                            isRecurring, 
-                            if (isRecurring && recurringDueDate.isNotBlank()) recurringDueDate else "Día 05 de cada mes"
+
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        label = { Text("Monto ($)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    // Category Selection: Robust grid layout to prevent text cut-off on mobile
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Categoría",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            categories.take(2).forEach { cat ->
+                                FilterChip(
+                                    selected = category == cat,
+                                    onClick = { category = cat },
+                                    label = { 
+                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                            Text(cat, fontSize = 11.sp) 
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            categories.drop(2).forEach { cat ->
+                                FilterChip(
+                                    selected = category == cat,
+                                    onClick = { category = cat },
+                                    label = { 
+                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                            Text(cat, fontSize = 11.sp) 
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                    // Recurring switch representation
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Gasto Recurrente",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Para alquileres o servicios mensuales",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                        Switch(
+                            checked = isRecurring,
+                            onCheckedChange = { isRecurring = it }
                         )
                     }
-                },
-                enabled = title.isNotBlank() && amount.toDoubleOrNull() != null
-            ) {
-                Text("Registrar")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+
+                    if (isRecurring) {
+                        OutlinedTextField(
+                            value = recurringDueDate,
+                            onValueChange = { recurringDueDate = it },
+                            label = { Text("Fecha de vencimiento") },
+                            placeholder = { Text("Día 05 de cada mes") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footer Fijo
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancelar")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val amtVal = amount.toDoubleOrNull() ?: 0.0
+                            if (title.isNotBlank() && amtVal > 0.0) {
+                                onAdd(
+                                    title, 
+                                    amtVal, 
+                                    category, 
+                                    isRecurring, 
+                                    if (isRecurring && recurringDueDate.isNotBlank()) recurringDueDate else "Día 05 de cada mes"
+                                )
+                            }
+                        },
+                        enabled = title.isNotBlank() && amount.toDoubleOrNull() != null
+                    ) {
+                        Text("Registrar")
+                    }
+                }
             }
         }
-    )
+    }
 }

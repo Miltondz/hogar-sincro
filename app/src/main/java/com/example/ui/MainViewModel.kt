@@ -251,7 +251,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Household Synced actions: toggle user simulation (Milton or Pilar)
+    // Household Synced actions: toggle user simulation (Milton or Alejandra)
     fun switchActiveUser(userName: String) {
         viewModelScope.launch {
             val current = syncSettings.first() ?: SyncSettings()

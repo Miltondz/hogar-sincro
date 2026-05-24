@@ -47,7 +47,7 @@ interface InventoryDao {
     @Delete
     suspend fun deleteInventoryItem(item: InventoryItem)
 
-    @Query("SELECT * FROM inventory_items WHERE isArchived = 0 AND currentStock <= minStockAlert")
+    @Query("SELECT * FROM inventory_items WHERE isArchived = 0 AND currentStock = 0")
     fun getLowStockItems(): Flow<List<InventoryItem>>
 
     @Query("DELETE FROM inventory_items")
