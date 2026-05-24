@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -78,29 +79,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun syncWithNeon() {
         viewModelScope.launch {
             neonConnectionState.value = "CONNECTING"
-            val connected = NeonDatabaseHelper.testConnection()
-            if (connected) {
-                val tablesCreated = NeonDatabaseHelper.createTables()
-                if (tablesCreated) {
-                    val syncExpensesOk = NeonDatabaseHelper.syncExpenses(getApplication(), repository.expenseDao)
-                    val syncInventoryOk = NeonDatabaseHelper.syncInventory(getApplication(), repository.inventoryDao)
-                    val syncShoppingOk = NeonDatabaseHelper.syncShopping(getApplication(), repository.shoppingDao)
-                    
-                    if (syncExpensesOk && syncInventoryOk && syncShoppingOk) {
-                        neonConnectionState.value = "CONNECTED"
-                        addSyncActivity("SISTEMA", "Base de datos Neon PostgreSQL sincronizada exitosamente.", "SISTEMA")
-                        addToastNotification("Sincronización Neon", "Datos del hogar actualizados con Neon Cloud.")
-                    } else {
-                        neonConnectionState.value = "ERROR"
-                        addSyncActivity("SISTEMA", "Fallo parcial de sincronización en Neon Postgres.", "SISTEMA")
-                    }
-                } else {
-                    neonConnectionState.value = "ERROR"
-                    addSyncActivity("SISTEMA", "No se pudieron comprobar o crear las tablas en Neon.", "SISTEMA")
-                }
+            val syncOk = ApiSyncService.syncAll(
+                getApplication(),
+                repository.expenseDao,
+                repository.inventoryDao,
+                repository.shoppingDao
+            )
+            
+            if (syncOk) {
+                neonConnectionState.value = "CONNECTED"
+                addSyncActivity("SISTEMA", "Sincronización bidireccional completada exitosamente.", "SISTEMA")
+                addToastNotification("Sincronización Cloud", "Datos del hogar actualizados con la API REST de Neon.")
+                showSnackbar("Sincronización con Neon completada ✓", SnackbarType.SUCCESS)
             } else {
                 neonConnectionState.value = "ERROR"
-                addSyncActivity("SISTEMA", "No se pudo conectar a Neon PostgreSQL. Modo offline activo.", "SISTEMA")
+                addSyncActivity("SISTEMA", "Fallo de comunicación con el servidor API de sincronización.", "SISTEMA")
+                showSnackbar("Sin conexión a Neon. Modo offline activo.", SnackbarType.ERROR)
             }
             generateSmartAlerts()
         }
@@ -254,6 +248,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _notifications.value = current
     }
 
+    // Snackbar feedback system
+    private val _snackbarEvent = Channel<SnackbarEvent>(Channel.BUFFERED)
+    val snackbarEvents = _snackbarEvent.receiveAsFlow()
+
+    fun showSnackbar(message: String, type: SnackbarType = SnackbarType.INFO) {
+        viewModelScope.launch {
+            _snackbarEvent.send(SnackbarEvent(message, type))
+        }
+    }
+
     // Expense Actions
     fun addExpense(title: String, amount: Double, category: String, isRecurring: Boolean = false, dueDate: String? = null) {
         viewModelScope.launch {
@@ -268,8 +272,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertExpense(expense)
             generateSmartAlerts()
-            
-            // Add sync log
+            showSnackbar("Gasto registrado correctamente", SnackbarType.SUCCESS)
             addSyncActivity(activeUser, "Agregó gasto de $$amount: $title", "GASTOS")
         }
     }
@@ -279,7 +282,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             DeletionTracker.trackExpenseDeletion(getApplication(), expense.id)
             repository.deleteExpense(expense)
             generateSmartAlerts()
-            
+            showSnackbar("Gasto eliminado", SnackbarType.WARNING)
             val activeUser = syncSettings.value.activeUser
             addSyncActivity(activeUser, "Eliminó el gasto: ${expense.title}", "GASTOS")
         }
@@ -299,7 +302,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 targetStore = targetStore ?: inventoryItems.value.find { it.name.equals(name, ignoreCase = true) }?.bestStore
             )
             repository.insertShoppingItem(item)
-            
+            showSnackbar("$name añadido a la lista de compras", SnackbarType.SUCCESS)
             val activeUser = syncSettings.value.activeUser
             addSyncActivity(activeUser, "Agregó '${name}' (${qty} ${unit}) a compras", "COMPRAS")
         }
@@ -310,6 +313,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val updated = item.copy(isBought = !item.isBought)
             repository.updateShoppingItem(updated)
             
+            if (updated.isBought) {
+                showSnackbar("${item.productName} marcado como comprado ✓", SnackbarType.SUCCESS)
+            } else {
+                showSnackbar("${item.productName} desmarcado", SnackbarType.INFO)
+            }
+
             val activeUser = syncSettings.value.activeUser
             addSyncActivity(activeUser, "${if (updated.isBought) "Compró" else "Desmarcó"} '${item.productName}'", "COMPRAS")
 
@@ -342,6 +351,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             DeletionTracker.trackShoppingDeletion(getApplication(), item.id)
             repository.deleteShoppingItem(item)
+            showSnackbar("Artículo removido de la lista", SnackbarType.WARNING)
         }
     }
 
@@ -369,7 +379,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertInventoryItem(item)
             generateSmartAlerts()
-            
+            showSnackbar("$name añadido al inventario", SnackbarType.SUCCESS)
             val activeUser = syncSettings.value.activeUser
             addSyncActivity(activeUser, "Añadió producto al catálogo de inventario: ${name}", "INVENTARIO")
         }
@@ -394,6 +404,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
               DeletionTracker.trackInventoryDeletion(getApplication(), item.id)
               repository.deleteInventoryItem(item)
               generateSmartAlerts()
+              showSnackbar("${item.name} eliminado del inventario", SnackbarType.WARNING)
          }
     }
 
@@ -515,11 +526,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 generateSmartAlerts()
-                
+                showSnackbar("Ticket de ${receipt.storeName} importado ✓ — $${String.format("%.2f", receipt.totalAmount)}", SnackbarType.SUCCESS)
                 val activeUser = syncSettings.value.activeUser
                 addSyncActivity(activeUser, "Escaneó ticket de compras de '${receipt.storeName}' por $${receipt.totalAmount}.", "SCANNER")
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Scanner exception during processing: ${e.message}", e)
+                showSnackbar("Error al escanear: ${e.message?.take(60) ?: "Error desconocido"}", SnackbarType.ERROR)
             } finally {
                 isScanning.value = false
             }
@@ -551,7 +563,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             
             prefs.edit().putBoolean("is_logged_in", true).apply()
             isLoggedIn.value = true
-            
+            showSnackbar("¡Bienvenido, $activeUser!", SnackbarType.SUCCESS)
             addSyncActivity(activeUser, "Inició sesión en el hogar $householdCode.", "SISTEMA")
             syncWithNeon()
         }
@@ -574,7 +586,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             
             prefs.edit().putBoolean("is_logged_in", true).apply()
             isLoggedIn.value = true
-            
+            showSnackbar("Hogar ${householdCode.uppercase()} registrado correctamente", SnackbarType.SUCCESS)
             addSyncActivity(activeUser, "Registró un nuevo hogar con código $householdCode.", "SISTEMA")
             syncWithNeon()
         }
@@ -585,6 +597,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             prefs.edit().putBoolean("is_logged_in", false).apply()
             isLoggedIn.value = false
         }
+    }
+
+    fun scanTicketFeedback(storeName: String, total: Double) {
+        showSnackbar("Ticket de $storeName ($${String.format("%.2f", total)}) escaneado ✓", SnackbarType.SUCCESS)
+    }
+
+    fun scanErrorFeedback(errorMsg: String) {
+        showSnackbar("Error al escanear: $errorMsg", SnackbarType.ERROR)
     }
 }
 
@@ -602,4 +622,11 @@ data class SyncActivity(
     val description: String,
     val category: String, // "COMPRAS", "INVENTARIO", "GASTOS", "SISTEMA", "SCANNER"
     val timestamp: Long
+)
+
+enum class SnackbarType { SUCCESS, ERROR, WARNING, INFO }
+
+data class SnackbarEvent(
+    val message: String,
+    val type: SnackbarType = SnackbarType.INFO
 )

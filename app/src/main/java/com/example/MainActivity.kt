@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.HomeViewModel
+import com.example.ui.SnackbarType
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.screens.*
 import java.util.Locale
@@ -61,6 +62,17 @@ fun MainAppScreen(viewModel: HomeViewModel) {
     val notifications by viewModel.notifications.collectAsState()
     var showNotificationsDialog by remember { mutableStateOf(false) }
     val showWebPortal by viewModel.showWebPortal.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Collect snackbar events from ViewModel and show them
+    LaunchedEffect(Unit) {
+        viewModel.snackbarEvents.collect { event ->
+            snackbarHostState.showSnackbar(
+                message = event.message,
+                duration = SnackbarDuration.Short
+            )
+        }
+    }
 
     // Synchronize current state alerts on view loaded
     LaunchedEffect(currentTab) {
@@ -195,6 +207,16 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                     icon = { Icon(imageVector = if (currentTab == NavigationTab.SYNC) Icons.Default.CloudSync else Icons.Outlined.CloudSync, contentDescription = "Sincro") },
                     label = { Text("Hogar", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier.testTag("sync_tab")
+                )
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { snackbarData ->
+                Snackbar(
+                    snackbarData = snackbarData,
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    actionColor = MaterialTheme.colorScheme.primary
                 )
             }
         }

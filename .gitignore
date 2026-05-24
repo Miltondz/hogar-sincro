@@ -16,3 +16,9 @@
 local.properties
 .env
 debug.keystore
+
+# Android SDK local copy (no subir al repo)
+local-sdk/
+
+# APK compiled outputs
+.build-outputs/

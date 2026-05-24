@@ -30,14 +30,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.HomeViewModel
 import java.util.Locale
+import kotlinx.coroutines.delay
+
+val SCANNER_FUNNY_MESSAGES = listOf(
+    "🤖 Sobornando a la IA con galletas virtuales...",
+    "🔍 Analizando el ticket... ¿De verdad compraste tanto?",
+    "🧠 Traduciendo la letra del cajero a lenguaje binario...",
+    "💸 Contabilizando la tragedia financiera de esta semana...",
+    "🛒 Negociando con la BD para que no te juzgue...",
+    "⚡ Gemini está reñando al servidor por la lentitud...",
+    "🥛 Confirmando si la leche de almendras es alimento o estilo de vida...",
+    "🧾 Descifrando jeróglifos modernos en la sección de totales...",
+    "📦 Auditando la despensa... ¿De verdad necesitas 5 latas de atún?",
+)
 
 @Composable
 fun ScannerScreen(viewModel: HomeViewModel) {
     val isScanning by viewModel.isScanning.collectAsState()
     val scanResult by viewModel.scanResult.collectAsState()
 
-    var selectedSample by remember { mutableStateOf("super") } // "super", "luz", "alquiler"
+    var selectedSample by remember { mutableStateOf("super") }
     var showExplanationDialog by remember { mutableStateOf(false) }
+
+    // Rotating funny loading message
+    var funnyMessage by remember { mutableStateOf("") }
+    LaunchedEffect(isScanning) {
+        if (isScanning) {
+            while (true) {
+                funnyMessage = SCANNER_FUNNY_MESSAGES.random()
+                delay(2500)
+            }
+        } else {
+            funnyMessage = ""
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -266,17 +292,25 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
-                            text = "Analizando con Gemini 3.5 Flash",
+                            text = "Analizando con Gemini Flash",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Extrayendo productos, cantidades, precios unitarios e importes finales de la factura seleccionada...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
-                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        AnimatedContent(
+                            targetState = funnyMessage,
+                            transitionSpec = {
+                                fadeIn() togetherWith fadeOut()
+                            },
+                            label = "funny_message"
+                        ) { msg ->
+                            Text(
+                                text = msg.ifEmpty { "Enviando imagen a Gemini..." },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             }

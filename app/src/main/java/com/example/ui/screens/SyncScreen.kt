@@ -43,6 +43,46 @@ fun SyncScreen(viewModel: HomeViewModel) {
 
     var showCodeDialog by remember { mutableStateOf(false) }
     var showAddMemberDialog by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    // Logout confirmation app-modal (NOT a system dialog)
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Logout,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text(
+                    text = "¿Cerrar sesión?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Se cerrará la sesión activa del hogar. Los datos locales se mantienen seguros.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutConfirm = false
+                        viewModel.logoutUser()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Sí, cerrar sesión", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -517,6 +557,61 @@ fun SyncScreen(viewModel: HomeViewModel) {
                 ActivityLogCard(activity = activity)
             }
         }
+
+        // ── Cerrar Sesión ──────────────────────────────────
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showLogoutConfirm = true }
+                    .testTag("logout_button"),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.errorContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Logout,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Cerrar Sesión",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Cambiar de hogar o usuario activo",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
     }
 
     if (showCodeDialog) {
@@ -758,5 +853,6 @@ fun ActivityLogCard(activity: SyncActivity) {
                 )
             }
         }
-    }
+
+}
 }
