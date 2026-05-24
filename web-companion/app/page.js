@@ -266,6 +266,10 @@ export default function Home() {
 // ── Dashboard (protected) ──────────────────────────────────────────────────────
 function Dashboard({ currentUser, householdCode, onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [geminiModel, setGeminiModel] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('hogar_sincro_gemini_model') || 'gemini-2.5-flash';
+    return 'gemini-2.5-flash';
+  });
 
   // Data States
   const [expenses, setExpenses] = useState([]);
@@ -283,7 +287,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
   // Forms States
   const [expenseForm, setExpenseForm] = useState({ title: '', amount: '', category: 'Alimentos', isRecurring: false, recurringDueDate: '', paidBy: currentUser || 'Milton' });
   const [shoppingForm, setShoppingForm] = useState({ productName: '', quantityToBuy: '1', unit: 'u', estimatedPrice: '', targetStore: '' });
-  const [inventoryForm, setInventoryForm] = useState({ name: '', currentStock: '', minStockAlert: '1', unit: 'u', depletionRatePerDay: '0.1', bestStore: '', bestPrice: '' });
+  const [inventoryForm, setInventoryForm] = useState({ name: '', currentStock: '', unit: 'u', bestStore: '', bestPrice: '' });
 
   // Scanner States
   const [isScanning, setIsScanning] = useState(false);
@@ -372,15 +376,8 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
     const alerts = [];
     inventoryList.forEach(item => {
       const stock = Number(item.current_stock);
-      const limit = Number(item.min_stock_alert);
-      const rate = Number(item.depletion_rate_per_day);
-      if (stock <= limit) {
-        alerts.push({ id: `low_${item.id}`, title: `Stock Bajo: ${item.name}`, message: `${item.name} tiene ${stock} ${item.unit} (Mín: ${limit}).`, type: 'ALERTA' });
-      } else if (rate > 0) {
-        const days = Math.floor(stock / rate);
-        if (days >= 1 && days <= 4) {
-          alerts.push({ id: `deplete_${item.id}`, title: `Agotamiento Pronto: ${item.name}`, message: `Quedan aprox. ${days} días de ${item.name}.`, type: 'ADVERTENCIA' });
-        }
+      if (stock === 0) {
+        alerts.push({ id: `low_${item.id}`, title: `Sin Stock: ${item.name}`, message: `${item.name} está agotado.`, type: 'ALERTA' });
       }
     });
     expensesList.forEach(bill => {
@@ -481,7 +478,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
     try {
       const res = await fetch('/api/scan-inventory', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: base64Images || [] })
+        body: JSON.stringify({ images: base64Images || [], model: geminiModel })
       });
       if (res.ok) {
         const result = await res.json();
@@ -541,18 +538,16 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
       const savePromises = itemsToCommit.map(async (item) => {
         const existingRealItem = inventory.find(inv => inv.name.toLowerCase() === item.name.toLowerCase());
         let newStock = Number(item.quantity);
-        let minStock = 1.0, unit = item.unit || 'u', rate = 0.1, bestStore = 'Carga Visual', bestPrice = null;
+        let unit = item.unit || 'u', bestStore = 'Carga Visual', bestPrice = null;
         if (existingRealItem) {
           newStock = Number(existingRealItem.current_stock) + Number(item.quantity);
-          minStock = existingRealItem.min_stock_alert;
           unit = existingRealItem.unit;
-          rate = existingRealItem.depletion_rate_per_day;
           bestStore = existingRealItem.best_store;
           bestPrice = existingRealItem.best_price;
         }
         return fetch('/api/inventory', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: existingRealItem ? existingRealItem.id : null, name: item.name, currentStock: newStock, minStockAlert: minStock, unit, depletionRatePerDay: rate, bestStore, bestPrice })
+          body: JSON.stringify({ id: existingRealItem ? existingRealItem.id : null, name: item.name, currentStock: newStock, minStockAlert: 0, unit, depletionRatePerDay: 0, bestStore, bestPrice })
         });
       });
       await Promise.all(savePromises);
@@ -572,10 +567,10 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
     try {
       const res = await fetch('/api/inventory', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: inventoryForm.name, currentStock: parseFloat(inventoryForm.currentStock || '0'), minStockAlert: parseFloat(inventoryForm.minStockAlert || '0'), unit: inventoryForm.unit, depletionRatePerDay: parseFloat(inventoryForm.depletionRatePerDay || '0.1'), bestStore: inventoryForm.bestStore || null, bestPrice: inventoryForm.bestPrice ? parseFloat(inventoryForm.bestPrice) : null })
+        body: JSON.stringify({ name: inventoryForm.name, currentStock: parseFloat(inventoryForm.currentStock || '0'), minStockAlert: 0, unit: inventoryForm.unit, depletionRatePerDay: 0, bestStore: inventoryForm.bestStore || null, bestPrice: inventoryForm.bestPrice ? parseFloat(inventoryForm.bestPrice) : null })
       });
       if (res.ok) {
-        setInventoryForm({ name: '', currentStock: '', minStockAlert: '1', unit: 'u', depletionRatePerDay: '0.1', bestStore: '', bestPrice: '' });
+        setInventoryForm({ name: '', currentStock: '', unit: 'u', bestStore: '', bestPrice: '' });
         addToast('Provisiones añadidas al Inventario', 'success');
         fetchData();
       } else addToast('Error al agregar al inventario', 'error');
@@ -609,7 +604,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
     try {
       const res = await fetch('/api/scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image || '' })
+        body: JSON.stringify({ image: base64Image || '', model: geminiModel })
       });
       if (res.ok) {
         const result = await res.json();
@@ -638,7 +633,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
   // Dashboard Stats
   const totalVariableThisMonth = expenses.filter(exp => !exp.is_recurring).reduce((sum, exp) => sum + Number(exp.amount), 0);
   const totalRecurring = expenses.filter(exp => exp.is_recurring).reduce((sum, exp) => sum + Number(exp.amount), 0);
-  const lowStockCount = inventory.filter(item => Number(item.current_stock) <= Number(item.min_stock_alert)).length;
+  const lowStockCount = inventory.filter(item => Number(item.current_stock) === 0).length;
   const userInitial = currentUser ? currentUser[0].toUpperCase() : 'U';
 
   return (
@@ -691,6 +686,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
             { id: 'shopping', label: 'Lista de Compras', icon2: <><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></> },
             { id: 'inventory', label: 'Despensa y Stock', icon2: <><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></> },
             { id: 'scanner', label: 'Escáner AI Recibos', icon2: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></> },
+            { id: 'sync', label: 'Sincronización', icon2: <><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M22 11.5A10 10 0 0 0 3.2 7.2M2 12.5a10 10 0 0 0 18.8 4.2"/></> },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}>
               <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">{tab.icon2}</svg>
@@ -733,6 +729,8 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
             icon: <><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></> },
           { id: 'scanner', label: 'Scanner',
             icon: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></> },
+          { id: 'sync', label: 'Sincro',
+            icon: <><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M22 11.5A10 10 0 0 0 3.2 7.2M2 12.5a10 10 0 0 0 18.8 4.2"/></> },
         ].map(tab => (
           <button
             key={tab.id}
@@ -762,6 +760,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
               {activeTab === 'shopping' && 'Compras'}
               {activeTab === 'inventory' && 'Despensa'}
               {activeTab === 'scanner' && 'Scanner AI'}
+              {activeTab === 'sync' && 'Sincronización'}
             </h2>
             <p>{householdCode} · {currentUser}</p>
           </div>
@@ -881,15 +880,15 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {inventory.slice(0, 5).map(item => {
-                          const isLow = Number(item.current_stock) <= Number(item.min_stock_alert);
+                          const isDepleted = Number(item.current_stock) === 0;
                           return (
-                            <div key={item.id} className="list-row" style={{ borderColor: isLow ? 'rgba(239, 83, 80, 0.2)' : 'transparent' }}>
+                            <div key={item.id} className="list-row" style={{ borderColor: isDepleted ? 'rgba(239, 83, 80, 0.2)' : 'transparent' }}>
                               <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span className="status-dot" style={{ backgroundColor: isLow ? 'var(--danger)' : 'var(--success)' }}></span>
+                                <span className="status-dot" style={{ backgroundColor: isDepleted ? 'var(--danger)' : 'var(--success)' }}></span>
                                 <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>{item.name}</span>
                               </div>
-                              <span style={{ fontSize: '12px', fontWeight: '600', color: isLow ? 'var(--danger)' : 'var(--text-secondary)' }}>
-                                {item.current_stock} / {item.min_stock_alert} {item.unit}
+                              <span style={{ fontSize: '12px', fontWeight: '600', color: isDepleted ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                                {isDepleted ? 'AGOTADO' : `${item.current_stock} ${item.unit}`}
                               </span>
                             </div>
                           );
@@ -1029,21 +1028,23 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '550px', overflowY: 'auto' }}>
                       {shopping.length === 0 ? (
                         <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>La lista de compras está vacía.</p>
-                      ) : (
-                        shopping.map(item => (
-                          <div key={item.id} className="list-row" style={{ opacity: item.is_bought ? 0.6 : 1, background: item.is_bought ? 'rgba(0,230,118,0.03)' : 'var(--bg-elevated)' }}>
+                      ) : (() => {
+                        const pending = shopping.filter(i => !i.is_bought);
+                        const bought = shopping.filter(i => i.is_bought);
+                        const renderItem = item => (
+                          <div key={item.id} className="list-row" style={{ opacity: item.is_bought ? 0.55 : 1, background: item.is_bought ? 'rgba(0,230,118,0.03)' : 'var(--bg-elevated)' }}>
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '14px' }}>
-                              <button onClick={() => handleToggleBought(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: item.is_bought ? 'var(--neon)' : 'var(--text-muted)' }}>
+                              <button onClick={() => handleToggleBought(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: item.is_bought ? 'var(--neon)' : 'var(--text-muted)', flexShrink: 0 }}>
                                 {item.is_bought ? (
                                   <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--neon)" stroke="var(--neon)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
                                 ) : (
-                                  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
+                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
                                 )}
                               </button>
                               <div>
                                 <span style={{ fontSize: '13px', fontWeight: '700', textDecoration: item.is_bought ? 'line-through' : 'none', color: item.is_bought ? 'var(--text-muted)' : 'var(--text-primary)' }}>{item.product_name}</span>
                                 <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                  Cantidad: {item.quantity_to_buy} {item.unit} {item.target_store && `• Comercio: ${item.target_store}`} {Number(item.estimated_price) > 0 && `• Estimado: $${Number(item.estimated_price).toFixed(2)}`}
+                                  {item.quantity_to_buy} {item.unit}{item.target_store ? ` • ${item.target_store}` : ''}{Number(item.estimated_price) > 0 ? ` • $${Number(item.estimated_price).toFixed(2)}` : ''}
                                 </p>
                               </div>
                             </div>
@@ -1051,8 +1052,23 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                               <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
                             </button>
                           </div>
-                        ))
-                      )}
+                        );
+                        return (
+                          <>
+                            {pending.map(renderItem)}
+                            {bought.length > 0 && (
+                              <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0', marginTop: '4px' }}>
+                                  <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                                  <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', letterSpacing: '1px' }}>COMPRADOS ({bought.length})</span>
+                                  <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                                </div>
+                                {bought.map(renderItem)}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1157,18 +1173,8 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                             <input type="number" step="0.1" className="form-control" value={inventoryForm.currentStock} onChange={e => setInventoryForm({...inventoryForm, currentStock: e.target.value})} placeholder="0" required />
                           </div>
                           <div className="form-group">
-                            <label className="form-label">Alerta de Mínimo</label>
-                            <input type="number" step="0.1" className="form-control" value={inventoryForm.minStockAlert} onChange={e => setInventoryForm({...inventoryForm, minStockAlert: e.target.value})} required />
-                          </div>
-                        </div>
-                        <div className="grid-2">
-                          <div className="form-group">
                             <label className="form-label">Unidad</label>
-                            <input type="text" className="form-control" value={inventoryForm.unit} onChange={e => setInventoryForm({...inventoryForm, unit: e.target.value})} placeholder="ej. kg, l" required />
-                          </div>
-                          <div className="form-group">
-                            <label className="form-label">Consumo Diario</label>
-                            <input type="number" step="0.01" className="form-control" value={inventoryForm.depletionRatePerDay} onChange={e => setInventoryForm({...inventoryForm, depletionRatePerDay: e.target.value})} required />
+                            <input type="text" className="form-control" value={inventoryForm.unit} onChange={e => setInventoryForm({...inventoryForm, unit: e.target.value})} placeholder="ej. kg, l, u" required />
                           </div>
                         </div>
                         <div className="form-group">
@@ -1194,29 +1200,25 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                         ) : (
                           inventory.map(item => {
                             const stock = Number(item.current_stock);
-                            const alertLimit = Number(item.min_stock_alert);
-                            const rate = Number(item.depletion_rate_per_day);
-                            const isLow = stock <= alertLimit;
-                            const days = rate > 0 ? Math.floor(stock / rate) : -1;
+                            const isDepleted = stock === 0;
+                            const stockColor = isDepleted ? 'var(--danger)' : 'var(--success)';
                             return (
-                              <div key={item.id} className={`inv-card ${isLow ? 'low' : ''}`}>
+                              <div key={item.id} className={`inv-card ${isDepleted ? 'low' : ''}`} style={{ borderLeft: `4px solid ${stockColor}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>{item.name}</h4>
-                                  <button onClick={() => handleDeleteInventory(item.id, item.name)} className="btn btn-ghost btn-icon btn-danger btn-sm" style={{ width: '24px', height: '24px', padding: '4px' }}>
+                                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', flex: 1, marginRight: '6px' }}>{item.name}</h4>
+                                  {isDepleted && <span style={{ fontSize: '9px', fontWeight: '800', background: 'var(--danger)', color: 'white', padding: '2px 5px', borderRadius: '4px', flexShrink: 0 }}>AGOTADO</span>}
+                                  <button onClick={() => handleDeleteInventory(item.id, item.name)} className="btn btn-ghost btn-icon btn-danger btn-sm" style={{ width: '24px', height: '24px', padding: '4px', marginLeft: '4px' }}>
                                     <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
                                   </button>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <button onClick={() => handleUpdateStock(item, -0.5)} className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: '10px' }}>-0.5</button>
-                                  <span style={{ fontSize: '14px', fontWeight: '800', color: isLow ? 'var(--danger)' : 'var(--neon)' }}>{stock}</span>
-                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>/ {alertLimit} {item.unit}</span>
-                                  <button onClick={() => handleUpdateStock(item, 0.5)} className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: '10px' }}>+0.5</button>
-                                </div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                  {days === -1 ? <span>Consumo estable</span> : days <= 4 ? <span style={{ color: 'var(--danger)', fontWeight: '700' }}>Quedan {days} días</span> : <span>Quedan {days} días</span>}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                                  <button onClick={() => handleUpdateStock(item, -1)} className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', fontSize: '14px', fontWeight: '700' }}>−</button>
+                                  <span style={{ fontSize: '15px', fontWeight: '800', color: stockColor, minWidth: '32px', textAlign: 'center' }}>{stock}</span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.unit}</span>
+                                  <button onClick={() => handleUpdateStock(item, 1)} className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', fontSize: '14px', fontWeight: '700' }}>+</button>
                                 </div>
                                 {item.best_store && (
-                                  <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '6px', fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                                  <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '6px', fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                                     <div>💵 Mín: ${Number(item.best_price).toFixed(2)} ({item.best_store})</div>
                                     {item.second_best_store && <div style={{ marginTop: '2px' }}>🥈 Alt: ${Number(item.second_best_price).toFixed(2)} ({item.second_best_store})</div>}
                                   </div>
@@ -1294,6 +1296,103 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+              {/* ── TAB: SYNC ── */}
+              {activeTab === 'sync' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '680px' }}>
+                  {/* Connection status */}
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Estado de Conexión</span>
+                      <span className={`badge ${neonStatus === 'CONNECTED' ? 'badge-neon' : 'badge-danger'}`}>
+                        {neonStatus === 'CONNECTED' ? 'ONLINE' : neonStatus === 'CONNECTING' ? 'CONECTANDO...' : 'OFFLINE'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {[
+                        ['Proveedor', 'Neon Serverless PostgreSQL (sa-east-1)'],
+                        ['Gastos registrados', expenses.length],
+                        ['Artículos en despensa', inventory.length],
+                        ['Lista de compras', shopping.length],
+                      ].map(([label, value]) => (
+                        <div key={label} className="list-row">
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>{label}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '700' }}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={fetchData} className="btn btn-primary" style={{ marginTop: '14px', width: '100%' }} disabled={loading}>
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                      {loading ? 'Sincronizando...' : 'Sincronizar Ahora'}
+                    </button>
+                  </div>
+
+                  {/* Household info */}
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Hogar Activo</span>
+                      <span className="badge badge-neon">Conectado</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div className="list-row">
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Código del Hogar</span>
+                        <span style={{ fontSize: '13px', color: 'var(--neon)', fontWeight: '800', letterSpacing: '1px' }}>{householdCode}</span>
+                      </div>
+                      <div className="list-row">
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Usuario Activo</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '700' }}>{currentUser}</span>
+                      </div>
+                    </div>
+                    <button onClick={onLogout} className="btn btn-ghost" style={{ marginTop: '14px', width: '100%', color: 'var(--danger)', borderColor: 'rgba(239,83,80,0.3)' }}>
+                      Cerrar Sesión
+                    </button>
+                  </div>
+
+                  {/* Gemini model selector */}
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Modelo de IA (Gemini)</span>
+                      <span className="badge badge-neon">{geminiModel}</span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.5' }}>
+                      Modelo usado en escaneo de tickets y detección de despensa.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {[
+                        { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', desc: 'Estable y gratuito (recomendado)' },
+                        { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', desc: 'Ligero y gratuito' },
+                        { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', desc: 'Más inteligente' },
+                      ].map(m => {
+                        const isSelected = geminiModel === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              setGeminiModel(m.id);
+                              if (typeof window !== 'undefined') localStorage.setItem('hogar_sincro_gemini_model', m.id);
+                            }}
+                            style={{
+                              width: '100%', padding: '12px 16px', textAlign: 'left',
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              background: isSelected ? 'var(--neon-dim)' : 'var(--bg-elevated)',
+                              border: `1px solid ${isSelected ? 'var(--neon-border)' : 'var(--border)'}`,
+                              color: isSelected ? 'var(--neon)' : 'var(--text-primary)',
+                              borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '700' }}>{m.label}</div>
+                              <div style={{ fontSize: '11px', color: isSelected ? 'var(--neon)' : 'var(--text-muted)', marginTop: '2px' }}>{m.desc}</div>
+                            </div>
+                            {isSelected && (
+                              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}

@@ -3,8 +3,9 @@ import { query } from '@/lib/db';
 
 export async function POST(request) {
   try {
-    const { image } = await request.json();
+    const { image, model } = await request.json();
     const apiKey = process.env.GEMINI_API_KEY;
+    const modelName = model || 'gemini-2.5-flash';
 
     // Hard fail if no API key configured
     if (!apiKey || apiKey.trim() === '' || apiKey === 'MY_GEMINI_API_KEY') {
@@ -60,7 +61,7 @@ export async function POST(request) {
       ],
     };
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
