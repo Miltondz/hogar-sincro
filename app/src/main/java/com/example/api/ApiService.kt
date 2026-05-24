@@ -29,4 +29,7 @@ data class SyncResponse(
 interface ApiService {
     @POST("api/sync")
     suspend fun syncData(@Body request: SyncRequest): Response<SyncResponse>
+
+    @POST("api/clear-db")
+    suspend fun clearCloudDatabase(): Response<Void>
 }

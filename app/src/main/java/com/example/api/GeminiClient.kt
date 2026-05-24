@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit
 
 object GeminiClient {
     private const val TAG = "GeminiClient"
-    private const val MODEL_NAME = "gemini-3.5-flash"
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -46,7 +45,10 @@ object GeminiClient {
      * Sends raw ticket text or preset ticket image logs to Gemini API.
      * Extracts structured details in JSON format.
      */
-    suspend fun parseReceiptWithAi(rawText: String): ParsedReceipt = withContext(Dispatchers.IO) {
+    suspend fun parseReceiptWithAi(
+        rawText: String,
+        modelName: String = "gemini-3.1-flash-lite"
+    ): ParsedReceipt = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
 
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY" || apiKey.contains("placeholder", ignoreCase = true)) {
@@ -107,7 +109,8 @@ object GeminiClient {
             put("generationConfig", generationConfig)
         }
 
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL_NAME:generateContent?key=$apiKey"
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = requestJson.toString().toRequestBody(mediaType)
 

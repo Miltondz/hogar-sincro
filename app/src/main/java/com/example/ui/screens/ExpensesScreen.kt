@@ -27,16 +27,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.Expense
 import com.example.ui.HomeViewModel
+import com.example.NavigationTab
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
-fun ExpensesScreen(viewModel: HomeViewModel) {
+fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) -> Unit) {
     val expenses by viewModel.expenses.collectAsState()
     val variableSum by viewModel.variableExpensesSum.collectAsState()
     val recurringSum by viewModel.recurringExpensesSum.collectAsState()
@@ -286,155 +288,123 @@ fun ExpensesScreen(viewModel: HomeViewModel) {
                 }
             }
 
-            // Balance del Hogar Card (Shared expenses and balances)
+            // Quick Actions Panel (Acciones Rápidas)
             item {
-                val membersList = remember(syncSettings.members) { syncSettings.members.split(",") }
-                
                 Card(
-                    modifier = Modifier.fillMaxWidth().testTag("household_balance_card"),
+                    modifier = Modifier.fillMaxWidth().testTag("quick_actions_card"),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(24.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.People,
+                                imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Saldos y División del Hogar",
-                                style = MaterialTheme.typography.titleSmall,
+                                text = "Acciones Rápidas del Hogar",
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         }
-                        
+
                         Text(
-                            text = "Porcentaje equitativo de aportaciones por cada participante del hogar (división equitativa):",
+                            text = "Accede rápidamente a las funciones clave de escaneo y abastecimiento del hogar.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                         )
-                        
-                        // Let's compute spent totals for each member dynamically
-                        val memberSpends = remember(expenses, membersList) {
-                            membersList.associateWith { member ->
-                                expenses.filter { it.paidBy.equals(member, ignoreCase = true) }.sumOf { it.amount }
-                            }
-                        }
-                        
-                        val totalSum = memberSpends.values.sum()
-                        val idealShare = if (membersList.isNotEmpty()) totalSum / membersList.size else 0.0
-                        
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            membersList.forEachIndexed { index, member ->
-                                val spent = memberSpends[member] ?: 0.0
-                                val color = when (index % 5) {
-                                    0 -> MaterialTheme.colorScheme.primary
-                                    1 -> Color(0xFFE91E63)
-                                    2 -> Color(0xFFFF9800)
-                                    3 -> Color(0xFF4CAF50)
-                                    else -> Color(0xFF9C27B0)
-                                }
-                                
-                                val balance = spent - idealShare
-                                
-                                Row(
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Button 1: Scan receipt
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onNavigateToTab(NavigationTab.SCANNER) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(color.copy(alpha = 0.05f))
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .clip(CircleShape)
-                                                .background(color),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = member.take(1).uppercase(),
-                                                color = Color.White,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column {
-                                            Text(
-                                                text = member + if (member == syncSettings.activeUser) " (Tú)" else "",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = "Aportó: $${String.format(Locale.US, "%.2f", spent)}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Color.Gray
-                                            )
-                                        }
-                                    }
-                                    
-                                    // Balance message
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(
-                                                if (balance >= -0.01) Color(0xE8E8F5E9) else Color(0xFFFFEBEE)
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = if (balance >= -0.01) {
-                                                "Favor: +$${String.format(Locale.US, "%.2f", balance)}"
-                                            } else {
-                                                "Debe: -$${String.format(Locale.US, "%.2f", Math.abs(balance))}"
-                                            },
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (balance >= -0.01) Color(0xFF2E7D32) else Color(0xFFC62828)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Settlement status box
-                        if (totalSum > 0 && membersList.size > 1) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f))
-                                    .padding(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Info,
+                                        imageVector = Icons.Default.ReceiptLong,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(28.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Cuota justa por persona: $${String.format(Locale.US, "%.2f", idealShare)}. Quienes tengan saldo 'Debe' pueden transferir directamente a quienes están en 'Favor' para saldar cuentas del hogar.",
+                                        text = "Escanear Boleta",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = "Subir foto / ticket",
                                         fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+
+                            // Button 2: Add to inventory
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onNavigateToTab(NavigationTab.INVENTORY) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Inventory2,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Ingresar Alacena",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = "Manual o foto",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }

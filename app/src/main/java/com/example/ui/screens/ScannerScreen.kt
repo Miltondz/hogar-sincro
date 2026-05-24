@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -22,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -46,11 +52,29 @@ val SCANNER_FUNNY_MESSAGES = listOf(
 
 @Composable
 fun ScannerScreen(viewModel: HomeViewModel) {
+    val context = LocalContext.current
     val isScanning by viewModel.isScanning.collectAsState()
     val scanResult by viewModel.scanResult.collectAsState()
 
-    var selectedSample by remember { mutableStateOf("super") }
+    // State for selected image
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showExplanationDialog by remember { mutableStateOf(false) }
+
+    // Photo Picker launcher (Android Photo Picker API — no permissions needed)
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        selectedImageUri = uri
+        if (uri != null) {
+            // Decode Uri -> Bitmap to send to Gemini
+            val inputStream = context.contentResolver.openInputStream(uri)
+            selectedBitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+        } else {
+            selectedBitmap = null
+        }
+    }
 
     // Rotating funny loading message
     var funnyMessage by remember { mutableStateOf("") }
@@ -101,7 +125,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = "Toma fotos de recibos, facturas o tickets de compra. La IA de Gemini extraerá automáticamente los productos, precios e importes para añadirlos a tu despensa y gastos del mes.",
+                            text = "Selecciona una foto de tu galería de recibos, facturas o tickets. Gemini extraerá automáticamente los productos, precios e importes para añadirlos a tu despensa y gastos del mes.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
@@ -110,11 +134,11 @@ fun ScannerScreen(viewModel: HomeViewModel) {
             }
         }
 
-        // Viewfinder simulator panel
+        // Image selector / viewfinder panel
         if (scanResult == null && !isScanning) {
             item {
                 Text(
-                    text = "Cámara y Captura de Factura",
+                    text = "Foto del Ticket o Factura",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -124,137 +148,220 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
+                        .height(280.dp)
+                        .clickable {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black)
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selectedBitmap != null) Color.Black
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        // Drawing realistic stylized grid representing scanner camera viewfinder
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = when (selectedSample) {
-                                    "luz" -> Icons.Outlined.Receipt
-                                    "alquiler" -> Icons.Outlined.HomeWork
-                                    else -> Icons.Outlined.ReceiptLong
-                                },
-                                contentDescription = null,
-                                tint = Color.Green,
-                                modifier = Modifier.size(56.dp)
+                        if (selectedBitmap != null) {
+                            // Show selected image as thumbnail
+                            Image(
+                                bitmap = selectedBitmap!!.asImageBitmap(),
+                                contentDescription = "Imagen seleccionada",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = when (selectedSample) {
-                                    "luz" -> "FACTURA DE LUZ Y CONSUMO\nCompañía Eléctrica Nacional - $85.30"
-                                    "alquiler" -> "RECIBO ALQUILER MENSUAL\nArrendamientos Centrales - $850.00"
-                                    else -> "TICKET DE SUPERMERCADO\nSupermercado Ahorro - $37.75"
-                                },
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyMedium.copy(
+                            // Dark overlay with "Change image" indicator
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.35f))
+                            )
+                            // Top-right "change" badge
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(12.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Cambiar",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            // Bottom "ready to scan" label
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(12.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black.copy(alpha = 0.65f))
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color.Green,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Imagen lista • Pulsa Escanear",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        } else {
+                            // Empty state — invite to pick a photo
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddPhotoAlternate,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Toca para seleccionar una foto",
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                ),
-                                textAlign = TextAlign.Center
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Selecciona un ticket, recibo o factura\ndesde tu galería de fotos",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AssistChip(
+                                        onClick = {
+                                            photoPickerLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        },
+                                        label = { Text("Galería", fontSize = 12.sp) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.dp))
+                                        }
+                                    )
+                                }
+                            }
+
+                            // Corner brackets (scanner frame decoration)
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(12.dp)
+                                    .size(24.dp)
+                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(topStart = 8.dp))
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "[ ENCUADRA EL TICKET Y TOMA LA FOTO ]",
-                                color = Color.Green.copy(alpha = 0.8f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Monospace
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(12.dp)
+                                    .size(24.dp)
+                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(topEnd = 8.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(12.dp)
+                                    .size(24.dp)
+                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(bottomStart = 8.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(12.dp)
+                                    .size(24.dp)
+                                    .border(width = 2.dp, color = MaterialTheme.colorScheme.primary, shape = RoundedCornerShape(bottomEnd = 8.dp))
                             )
                         }
-
-                        // Grid overlays
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .size(24.dp)
-                                .border(width = 2.dp, color = Color.Green, shape = RoundedCornerShape(topStart = 8.dp))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(24.dp)
-                                .border(width = 2.dp, color = Color.Green, shape = RoundedCornerShape(topEnd = 8.dp))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .size(24.dp)
-                                .border(width = 2.dp, color = Color.Green, shape = RoundedCornerShape(bottomStart = 8.dp))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .size(24.dp)
-                                .border(width = 2.dp, color = Color.Green, shape = RoundedCornerShape(bottomEnd = 8.dp))
-                        )
                     }
                 }
             }
 
-            // Selector of mock samples for easy testing
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Selecciona un tipo de ticket de ejemplo para escanear:",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        SampleChip(
-                            label = "Supermercado",
-                            selected = selectedSample == "super",
-                            icon = Icons.Default.ShoppingCart,
-                            onClick = { selectedSample = "super" }
-                        )
-                        SampleChip(
-                            label = "Factura de Luz",
-                            selected = selectedSample == "luz",
-                            icon = Icons.Default.FlashOn,
-                            onClick = { selectedSample = "luz" }
-                        )
-                        SampleChip(
-                            label = "Alquiler Hogar",
-                            selected = selectedSample == "alquiler",
-                            icon = Icons.Default.Home,
-                            onClick = { selectedSample = "alquiler" }
-                        )
-                    }
-                }
-            }
-
-            // Capture CTA Trigger button
+            // Scan trigger button (enabled only when image is selected)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.scanTicketWithGemini(null, selectedSample) },
+                        onClick = {
+                            if (selectedBitmap != null) {
+                                viewModel.scanTicketWithGemini(selectedBitmap, null)
+                            } else {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(56.dp)
                             .testTag("scan_trigger_button"),
                         shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedBitmap != null)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.secondaryContainer
+                        )
                     ) {
-                        Icon(imageVector = Icons.Default.PhotoCamera, contentDescription = null)
+                        Icon(
+                            imageVector = if (selectedBitmap != null) Icons.Default.AutoAwesome else Icons.Default.PhotoLibrary,
+                            contentDescription = null,
+                            tint = if (selectedBitmap != null)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Escanear con IA de Gemini", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (selectedBitmap != null) "Escanear con IA de Gemini" else "Seleccionar Foto",
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedBitmap != null)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
-                    
+
                     IconButton(
                         onClick = { showExplanationDialog = true },
                         modifier = Modifier
@@ -330,8 +437,12 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    
-                    TextButton(onClick = { viewModel.clearScanResult() }) {
+
+                    TextButton(onClick = {
+                        viewModel.clearScanResult()
+                        selectedImageUri = null
+                        selectedBitmap = null
+                    }) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Escanear otro")
@@ -373,7 +484,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        
+
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Se ha registrado un gasto de ${receipt.category} y se actualizaron los precios más convenientes de cada artículo en tu base de datos del hogar.",
@@ -415,7 +526,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                             fontFamily = FontFamily.Monospace,
                             color = Color.Gray
                         )
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
                         Divider(color = Color.Black, modifier = Modifier.padding(bottom = 12.dp))
 
@@ -439,13 +550,13 @@ fun ScannerScreen(viewModel: HomeViewModel) {
                                             color = Color.DarkGray
                                         )
                                         Text(
-                                            text = "${item.quantity} raciones/u * $${String.format(Locale.US, "%.2f", item.price)}",
+                                            text = "${item.quantity} u * $${String.format(Locale.US, "%.2f", item.price)}",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = FontFamily.Monospace,
                                             color = Color.Gray
                                         )
                                     }
-                                    
+
                                     Text(
                                         text = "$${String.format(Locale.US, "%.2f", item.price * item.quantity)}",
                                         style = MaterialTheme.typography.bodySmall,
@@ -491,7 +602,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
             onDismissRequest = { showExplanationDialog = false },
             title = { Text("¿Cómo funciona el scanner?") },
             text = {
-                Text("Esta sección simula un sensor de cámara y envía la imagen del ticket a Gemini Flash (modelo multimodal) para extraer autónomamente:\n\n1. Nombre Comercial\n2. Consumo por categoría\n3. Lista desglosada con raciones y precios\n\nLos artículos se registran directamente en los históricos de precios habituales de la sección Despensa, y el total se archiva en tus Gastos Mensuales.")
+                Text("Esta sección usa el selector de fotos de Android para que elijas una imagen de tu galería y la envía a Gemini Flash (modelo multimodal) para extraer autónomamente:\n\n1. Nombre Comercial\n2. Consumo por categoría\n3. Lista desglosada con cantidades y precios\n\nLos artículos se registran directamente en los históricos de precios habituales de la sección Despensa, y el total se archiva en tus Gastos Mensuales.")
             },
             confirmButton = {
                 Button(onClick = { showExplanationDialog = false }) {
@@ -500,25 +611,4 @@ fun ScannerScreen(viewModel: HomeViewModel) {
             }
         )
     }
-}
-
-@Composable
-fun SampleChip(
-    label: String,
-    selected: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, fontSize = 11.sp) },
-        leadingIcon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(10.dp)
-            )
-        }
-    )
 }

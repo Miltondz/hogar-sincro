@@ -64,8 +64,8 @@ export async function POST(request) {
         // Perform upserts
         if (localItems && localItems.length > 0) {
           const q = `
-            INSERT INTO inventory_items (id, name, current_stock, min_stock_alert, unit, depletion_rate_per_day, best_store, best_price, second_best_store, second_best_price, last_updated)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO inventory_items (id, name, current_stock, min_stock_alert, unit, depletion_rate_per_day, best_store, best_price, second_best_store, second_best_price, last_updated, is_archived)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               current_stock = EXCLUDED.current_stock,
@@ -76,7 +76,8 @@ export async function POST(request) {
               best_price = EXCLUDED.best_price,
               second_best_store = EXCLUDED.second_best_store,
               second_best_price = EXCLUDED.second_best_price,
-              last_updated = EXCLUDED.last_updated
+              last_updated = EXCLUDED.last_updated,
+              is_archived = EXCLUDED.is_archived
           `;
           for (const item of localItems) {
             await query(q, [
@@ -90,7 +91,8 @@ export async function POST(request) {
               item.bestPrice ? Number(item.bestPrice) : null,
               item.secondBestStore || null,
               item.secondBestPrice ? Number(item.secondBestPrice) : null,
-              Number(item.lastUpdated) || Date.now()
+              Number(item.lastUpdated) || Date.now(),
+              item.isArchived || false
             ]);
           }
         }
@@ -165,7 +167,8 @@ export async function POST(request) {
       bestPrice: row.best_price,
       secondBestStore: row.second_best_store,
       secondBestPrice: row.second_best_price,
-      lastUpdated: Number(row.last_updated)
+      lastUpdated: Number(row.last_updated),
+      isArchived: row.is_archived || false
     }));
 
     const shoppingRes = await query('SELECT * FROM shopping_items ORDER BY id ASC');

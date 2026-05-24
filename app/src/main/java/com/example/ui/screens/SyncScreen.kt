@@ -44,6 +44,7 @@ fun SyncScreen(viewModel: HomeViewModel) {
     var showCodeDialog by remember { mutableStateOf(false) }
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showWipeConfirm by remember { mutableStateOf(false) }
 
     // Logout confirmation app-modal (NOT a system dialog)
     if (showLogoutConfirm) {
@@ -78,6 +79,45 @@ fun SyncScreen(viewModel: HomeViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (showWipeConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWipeConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text(
+                    text = "Limpiar Base de Datos del Hogar",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            text = {
+                Text("¿Estás absolutamente seguro de que deseas limpiar toda la base de datos local y en la nube de tu familia?\n\nEsta acción eliminará todos los gastos, despensa y listas de compras, restableciendo el hogar únicamente con los usuarios Milton y Alejandra. Esta operación es irreversible.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showWipeConfirm = false
+                        viewModel.clearFullFamilyDatabase()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Limpiar Todo", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWipeConfirm = false }) {
                     Text("Cancelar")
                 }
             }
@@ -380,11 +420,75 @@ fun SyncScreen(viewModel: HomeViewModel) {
                             Text("Añadir Integrante al Hogar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Divider(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+
+                        // AI Model Config Section
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Modelo de Inteligencia Artificial (Escaneo & Extracción)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            
+                            Text(
+                                text = "Selecciona qué modelo inteligente se usará para procesar e importar la información de tus tickets de compra:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+
+                            val selectedModel = settings.geminiModel
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val isLiteSelected = selectedModel == "gemini-3.1-flash-lite"
+                                val isStandardSelected = selectedModel == "gemini-1.5-flash"
+
+                                // Gemini 3.1 Flash-Lite Button
+                                Button(
+                                    onClick = { viewModel.changeGeminiModel("gemini-3.1-flash-lite") },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isLiteSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = if (isLiteSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f).height(44.dp)
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("3.1 Flash-Lite", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Recomendado (Eficiente)", fontSize = 8.sp, color = if (isLiteSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else Color.Gray)
+                                    }
+                                }
+
+                                // Gemini 1.5 Flash Button
+                                Button(
+                                    onClick = { viewModel.changeGeminiModel("gemini-1.5-flash") },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isStandardSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = if (isStandardSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f).height(44.dp)
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("1.5 Flash", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Estándar", fontSize = 8.sp, color = if (isStandardSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
                         
                         // Button to Log Out / Cerrar Sesión
                         OutlinedButton(
                             onClick = { viewModel.logoutUser() },
+
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.error
                             ),
@@ -555,6 +659,62 @@ fun SyncScreen(viewModel: HomeViewModel) {
         } else {
             items(activities) { activity ->
                 ActivityLogCard(activity = activity)
+            }
+        }
+
+        // ── Zona de Peligro (Limpiar DB) ──────────────────────────────────
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showWipeConfirm = true }
+                    .testTag("wipe_db_button"),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Limpiar Base de Datos del Hogar",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Borra todo en local y cloud (Neon PostgreSQL)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
 

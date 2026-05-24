@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.api.RetrofitClient
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -64,12 +65,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // Global Web Portal simulated view toggle
     val showWebPortal = MutableStateFlow(false)
 
+    // Larder scan state flows
+    val isScanningLarder = MutableStateFlow(false)
+    val larderScanResult = MutableStateFlow<List<ExtractedLarderItem>?>(null)
+
+    // Price scan state flows
+    val isScanningPrice = MutableStateFlow(false)
+    val priceScanResult = MutableStateFlow<ExtractedProductPrice?>(null)
+
+    // Shopping Cart state flows
+    val shoppingCartActive = MutableStateFlow(prefs.getBoolean("shopping_cart_active", false))
+    val shoppingCartBudget = MutableStateFlow(prefs.getFloat("shopping_cart_budget", 0f).toDouble())
+
     init {
         viewModelScope.launch {
-            // Seeding default data on startup
+            // Clean state and configure members on startup
             repository.prepopulateIfEmpty()
             generateSmartAlerts()
-            startRealTimeSyncSimulation()
             // Pull/push with Neon Postgres on startup
             syncWithNeon()
         }
@@ -152,82 +164,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // SIMULATED REAL-TIME SYNCHRONIZATION ENGINE FOR MULTI-USER ACCESS
-    private fun startRealTimeSyncSimulation() {
-        viewModelScope.launch {
-            val random = Random()
-            // Wait first
-            delay(20000)
-
-            while (true) {
-                val settings = syncSettings.value
-                if (settings.isSyncEnabled) {
-                    val membersList = settings.members.split(",")
-                    val otherUsers = membersList.filter { it != settings.activeUser }
-                    val otherUser = if (otherUsers.isNotEmpty()) otherUsers[random.nextInt(otherUsers.size)] else "Pilar"
-                    
-                    // Choose a random sync scenario from the other user
-                    when (random.nextInt(4)) {
-                        0 -> {
-                            // Sync Scenario 0: Pilar/otherUser consumes stock of Rice
-                            val rice = inventoryItems.value.find { it.name.contains("Arroz", ignoreCase = true) }
-                            if (rice != null && rice.currentStock > 0.2) {
-                                val updated = rice.copy(
-                                    currentStock = Math.max(0.1, rice.currentStock - 0.2),
-                                    lastUpdated = System.currentTimeMillis()
-                                )
-                                repository.updateInventoryItem(updated)
-                                addSyncActivity(otherUser, "Consumió 0.2 kg de Arroz. Inventario actualizado.", "INVENTARIO")
-                                addToastNotification("Inventario", "$otherUser consumió Arroz. ¡Stock bajo!")
-                            }
-                        }
-                        1 -> {
-                            // Sync Scenario 1: Pilar/otherUser adds shopping item
-                            val itemName = "Frutas frescas"
-                            val exists = shoppingItems.value.any { it.productName.equals(itemName, ignoreCase = true) }
-                            if (!exists) {
-                                repository.insertShoppingItem(ShoppingItem(productName = itemName, quantityToBuy = 1.0, unit = "bolsa", estimatedPrice = 5.50, isBought = false, targetStore = "Mercado Central"))
-                                addSyncActivity(otherUser, "Agregó 'Frutas frescas' a la lista de compras.", "COMPRAS")
-                                addToastNotification("Lista de Compras", "$otherUser agregó 'Frutas frescas' a la lista.")
-                            }
-                        }
-                        2 -> {
-                            // Sync Scenario 2: Pilar/otherUser buys an item
-                            val pendingItem = shoppingItems.value.find { !it.isBought }
-                            if (pendingItem != null) {
-                                val updated = pendingItem.copy(isBought = true)
-                                repository.updateShoppingItem(updated)
-                                // Add to expenses too
-                                repository.insertExpense(Expense(
-                                    title = "${pendingItem.productName} (Por $otherUser)",
-                                    amount = pendingItem.estimatedPrice,
-                                    category = "Alimentos",
-                                    paidBy = otherUser
-                                ))
-                                addSyncActivity(otherUser, "Compró '${pendingItem.productName}' por $${pendingItem.estimatedPrice}.", "Gasto")
-                                addToastNotification("Compras", "$otherUser compró ${pendingItem.productName} y registró el gasto.")
-                            }
-                        }
-                        3 -> {
-                            // Sync Scenario 3: Pilar/otherUser adds a service expense
-                            repository.insertExpense(Expense(
-                                title = "Gas de Cocina - Recarga",
-                                amount = 22.00,
-                                category = "Servicio",
-                                paidBy = otherUser
-                            ))
-                            addSyncActivity(otherUser, "Registró un gasto de $22.00 para 'Gas de Cocina'.", "GASTO")
-                            addToastNotification("Gastos", "$otherUser registró un gasto de $22.00.")
-                        }
-                    }
-                    generateSmartAlerts()
-                    repository.saveSyncSettings(settings.copy(lastSyncTimestamp = System.currentTimeMillis()))
-                }
-                // Sync pulse runs every 35 seconds to simulate ambient activity in background
-                delay(35000)
-            }
-        }
-    }
+    // Real-time sync simulation DISABLED — data is only created by the user or via Gemini AI scanning
+    // No mock data is generated automatically
 
     private fun addSyncActivity(user: String, description: String, category: String) {
         val newList = _syncActivities.value.toMutableList()
@@ -408,6 +346,198 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
          }
     }
 
+    fun quickConsumeItem(item: InventoryItem) {
+        viewModelScope.launch {
+            val newStock = Math.max(0.0, item.currentStock - 1.0)
+            val updated = item.copy(currentStock = newStock, lastUpdated = System.currentTimeMillis())
+            repository.updateInventoryItem(updated)
+            generateSmartAlerts()
+            showSnackbar("Consumo registrado para ${item.name} (-1 ${item.unit})", SnackbarType.SUCCESS)
+            val activeUser = syncSettings.value.activeUser
+            addSyncActivity(activeUser, "Consumió 1 ${item.unit} de '${item.name}' (Stock actual: $newStock)", "INVENTARIO")
+        }
+    }
+
+    fun archiveInventoryItem(item: InventoryItem) {
+        viewModelScope.launch {
+            val updated = item.copy(isArchived = true, lastUpdated = System.currentTimeMillis())
+            repository.updateInventoryItem(updated)
+            generateSmartAlerts()
+            showSnackbar("${item.name} archivado correctamente", SnackbarType.INFO)
+            val activeUser = syncSettings.value.activeUser
+            addSyncActivity(activeUser, "Archivó el producto '${item.name}' de la despensa", "INVENTARIO")
+        }
+    }
+
+    fun editInventoryItem(
+        item: InventoryItem,
+        name: String,
+        stock: Double,
+        limit: Double,
+        unit: String,
+        depletionRate: Double,
+        store: String?,
+        price: Double?
+    ) {
+        viewModelScope.launch {
+            val updated = item.copy(
+                name = name,
+                currentStock = stock,
+                minStockAlert = limit,
+                unit = unit,
+                depletionRatePerDay = depletionRate,
+                bestStore = store,
+                bestPrice = price,
+                lastUpdated = System.currentTimeMillis()
+            )
+            repository.updateInventoryItem(updated)
+            generateSmartAlerts()
+            showSnackbar("Producto '${name}' actualizado", SnackbarType.SUCCESS)
+            val activeUser = syncSettings.value.activeUser
+            addSyncActivity(activeUser, "Editó el producto '${name}' en la despensa", "INVENTARIO")
+        }
+    }
+
+    fun scanLarderWithGemini(bitmap: Bitmap) {
+        viewModelScope.launch {
+            isScanningLarder.value = true
+            try {
+                val activeModel = syncSettings.value.geminiModel
+                val result = GeminiScannerService.scanLarder(bitmap, activeModel)
+                larderScanResult.value = result.items
+                showSnackbar("Alacena analizada. Confirma los productos.", SnackbarType.SUCCESS)
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error scanning larder", e)
+                showSnackbar("Error al escanear la alacena.", SnackbarType.ERROR)
+            } finally {
+                isScanningLarder.value = false
+            }
+        }
+    }
+
+    fun clearLarderScanResult() {
+        larderScanResult.value = null
+    }
+
+    fun commitLarderScanItems(items: List<ExtractedLarderItem>) {
+        viewModelScope.launch {
+            val existing = repository.allInventoryItems.first()
+            items.forEach { scanItem ->
+                val match = existing.find { it.name.equals(scanItem.name, ignoreCase = true) }
+                if (match != null) {
+                    val updated = match.copy(
+                        currentStock = match.currentStock + scanItem.quantity,
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                    repository.updateInventoryItem(updated)
+                } else {
+                    val newItem = InventoryItem(
+                        name = scanItem.name,
+                        currentStock = scanItem.quantity,
+                        minStockAlert = 1.0,
+                        unit = scanItem.unit,
+                        depletionRatePerDay = 0.1,
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                    repository.insertInventoryItem(newItem)
+                }
+            }
+            clearLarderScanResult()
+            generateSmartAlerts()
+            showSnackbar("Productos incorporados a la despensa.", SnackbarType.SUCCESS)
+            val activeUser = syncSettings.value.activeUser
+            addSyncActivity(activeUser, "Escaneó e incorporó productos a la despensa mediante foto de alacena.", "INVENTARIO")
+        }
+    }
+
+    fun scanProductPriceWithGemini(bitmap: Bitmap) {
+        viewModelScope.launch {
+            isScanningPrice.value = true
+            try {
+                val activeModel = syncSettings.value.geminiModel
+                val result = GeminiScannerService.scanProductPrice(bitmap, activeModel)
+                priceScanResult.value = result
+                showSnackbar("Precio de producto extraído con éxito.", SnackbarType.SUCCESS)
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error scanning product price", e)
+                showSnackbar("Error al extraer precio del producto.", SnackbarType.ERROR)
+            } finally {
+                isScanningPrice.value = false
+            }
+        }
+    }
+
+    fun clearPriceScanResult() {
+        priceScanResult.value = null
+    }
+
+    fun startShoppingCart(budget: Double) {
+        prefs.edit().apply {
+            putBoolean("shopping_cart_active", true)
+            putFloat("shopping_cart_budget", budget.toFloat())
+            apply()
+        }
+        shoppingCartActive.value = true
+        shoppingCartBudget.value = budget
+        showSnackbar("Sesión de Carrito iniciada con $$budget", SnackbarType.SUCCESS)
+    }
+
+    fun closeCartAndLogExpense(concept: String, actualSpent: Double) {
+        viewModelScope.launch {
+            val activeUser = syncSettings.value.activeUser
+            val exp = Expense(
+                title = concept,
+                amount = actualSpent,
+                category = "Alimentos",
+                timestamp = System.currentTimeMillis(),
+                paidBy = activeUser
+            )
+            repository.insertExpense(exp)
+            repository.deleteBoughtShoppingItems()
+
+            prefs.edit().apply {
+                putBoolean("shopping_cart_active", false)
+                putFloat("shopping_cart_budget", 0f)
+                apply()
+            }
+            shoppingCartActive.value = false
+            shoppingCartBudget.value = 0.0
+
+            generateSmartAlerts()
+            showSnackbar("Compra finalizada e incorporada a Gastos ($$actualSpent).", SnackbarType.SUCCESS)
+            addSyncActivity(activeUser, "Finalizó compra del supermercado: $concept por $$actualSpent", "COMPRAS")
+        }
+    }
+
+    fun clearFullFamilyDatabase() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.apiService.clearCloudDatabase()
+                if (response.isSuccessful) {
+                    Log.i("HomeViewModel", "Neon cloud database wiped successfully via API.")
+                } else {
+                    Log.e("HomeViewModel", "Neon cloud database wipe failed: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("HomeViewModel", "Error connecting to wipe API", e)
+            }
+
+            repository.clearAllLocalData()
+
+            val resetSettings = SyncSettings(
+                activeUser = "Milton",
+                members = "Milton,Alejandra",
+                householdCode = "HOGAR-5892"
+            )
+            repository.saveSyncSettings(resetSettings)
+            syncWithNeon()
+            
+            generateSmartAlerts()
+            showSnackbar("Toda la base de datos del hogar ha sido limpiada.", SnackbarType.WARNING)
+            addSyncActivity("SISTEMA", "Limpió por completo la base de datos del hogar.", "SISTEMA")
+        }
+    }
+
 
 
     // Household Sync Settings Actions
@@ -468,13 +598,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun changeGeminiModel(modelName: String) {
+        viewModelScope.launch {
+            val updated = syncSettings.value.copy(geminiModel = modelName)
+            repository.saveSyncSettings(updated)
+            addSyncActivity(syncSettings.value.activeUser, "Cambió modelo de IA a $modelName", "CONFIGURACIÓN")
+        }
+    }
+
     // Ticket automatic OCR Scanning Action
     fun scanTicketWithGemini(bitmap: Bitmap?, sampleType: String?) {
         viewModelScope.launch {
             isScanning.value = true
             try {
-                val receipt = GeminiScannerService.scanReceipt(bitmap, sampleType)
+                val modelToUse = syncSettings.value.geminiModel
+                val receipt = GeminiScannerService.scanReceipt(bitmap, modelName = modelToUse, sampleType = sampleType)
                 scanResult.value = receipt
+
 
                 // Automatically import products & expenses from Receipt!
                 // 1. Add as Variable Expense

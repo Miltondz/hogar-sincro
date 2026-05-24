@@ -48,12 +48,28 @@ class Repository(private val database: AppDatabase) {
 
     suspend fun saveSyncSettings(settings: SyncSettings) = syncSettingsDao.saveSyncSettings(settings)
 
+    suspend fun clearAllLocalData() {
+        expenseDao.clearAllExpenses()
+        inventoryDao.clearAllInventoryItems()
+        shoppingDao.clearAll()
+    }
+
     // Pre-populate Database with realistic household data if empty
     suspend fun prepopulateIfEmpty() {
-        // Disabled mock/test data seeding to keep database clean.
+        // Force complete clean state for Milton & Alejandra
         val settings = syncSettings.first()
-        if (settings == null) {
-            syncSettingsDao.saveSyncSettings(SyncSettings())
+        if (settings == null || !settings.members.contains("Alejandra") || settings.members.contains("Pilar")) {
+            // Delete all local data
+            clearAllLocalData()
+            
+            // Save clean settings
+            val cleanSettings = SyncSettings(
+                members = "Milton,Alejandra",
+                activeUser = "Milton",
+                householdCode = "HOGAR-5892"
+            )
+            syncSettingsDao.saveSyncSettings(cleanSettings)
         }
     }
+
 }

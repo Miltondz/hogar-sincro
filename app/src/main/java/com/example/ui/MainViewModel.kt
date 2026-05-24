@@ -302,7 +302,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _scanProgress.value = "Procesando ticket con inteligencia artificial de Gemini..."
             try {
                 // Call our Gemini API helper
-                val parsed = GeminiClient.parseReceiptWithAi(rawTicketText)
+                val settings = syncSettings.first() ?: SyncSettings()
+                val parsed = GeminiClient.parseReceiptWithAi(rawTicketText, modelName = settings.geminiModel)
+
 
                 // 1. Add to variable expenses list
                 repository.insertExpense(

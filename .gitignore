@@ -22,3 +22,5 @@ local-sdk/
 
 # APK compiled outputs
 .build-outputs/
+.vercel
+.env*

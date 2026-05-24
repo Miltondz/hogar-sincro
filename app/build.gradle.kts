@@ -59,10 +59,10 @@ android {
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
+// from the project root directory (resolved via rootProject to avoid path issues).
 secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
+  propertiesFileName = rootProject.file(".env").absolutePath
+  defaultPropertiesFileName = rootProject.file(".env.example").absolutePath
 }
 
 // Some unused dependencies are commented out below instead of being removed.

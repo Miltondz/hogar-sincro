@@ -185,7 +185,7 @@ function LoginScreen({ onLogin }) {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                {[['M', 'Milton', '#0a0f0c', 'var(--neon)'], ['P', 'Pilar', '#0a0f0c', '#7c83fd']].map(([initial, name, textColor, bg]) => (
+                {[['M', 'Milton', '#0a0f0c', 'var(--neon)'], ['A', 'Alejandra', '#0a0f0c', '#7c83fd']].map(([initial, name, textColor, bg]) => (
                   <button
                     key={name}
                     className="btn"
@@ -929,7 +929,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                         <label className="form-label">Quién Pagó</label>
                         <select className="form-control" value={expenseForm.paidBy} onChange={e => setExpenseForm({...expenseForm, paidBy: e.target.value})}>
                           <option value="Milton">Milton</option>
-                          <option value="Pilar">Pilar</option>
+                          <option value="Alejandra">Alejandra</option>
                         </select>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '6px 0' }}>

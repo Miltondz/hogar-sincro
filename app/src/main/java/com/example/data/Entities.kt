@@ -27,7 +27,8 @@ data class InventoryItem(
     val bestPrice: Double? = null,
     val secondBestStore: String? = null,
     val secondBestPrice: Double? = null,
-    val lastUpdated: Long = System.currentTimeMillis()
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val isArchived: Boolean = false
 ) {
     // Calculated field: estimates how many days till depletion.
     val daysUntilDepletion: Int
@@ -52,9 +53,12 @@ data class ShoppingItem(
 @Entity(tableName = "sync_settings")
 data class SyncSettings(
     @PrimaryKey val id: Int = 1, // Single row configuration
-    val activeUser: String = "Milton", // "Milton" or "Pilar"
+    val activeUser: String = "Milton", // "Milton" or "Alejandra"
     val householdCode: String = "HOGAR-5892",
     val isSyncEnabled: Boolean = true,
     val lastSyncTimestamp: Long = System.currentTimeMillis(),
-    val members: String = "Milton,Pilar" // Comma-separated list of members
+    val members: String = "Milton,Alejandra", // Comma-separated list of members
+    val geminiModel: String = "gemini-3.1-flash-lite"
 )
+
+

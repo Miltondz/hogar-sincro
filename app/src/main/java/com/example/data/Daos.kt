@@ -25,14 +25,17 @@ interface ExpenseDao {
 
     @Query("SELECT SUM(amount) FROM expenses WHERE isRecurring = 1")
     fun getRecurringExpensesSum(): Flow<Double?>
+
+    @Query("DELETE FROM expenses")
+    suspend fun clearAllExpenses()
 }
 
 @Dao
 interface InventoryDao {
-    @Query("SELECT * FROM inventory_items ORDER BY name ASC")
+    @Query("SELECT * FROM inventory_items WHERE isArchived = 0 ORDER BY name ASC")
     fun getAllInventoryItems(): Flow<List<InventoryItem>>
 
-    @Query("SELECT * FROM inventory_items ORDER BY name ASC")
+    @Query("SELECT * FROM inventory_items WHERE isArchived = 0 ORDER BY name ASC")
     suspend fun getAllInventoryItemsDirect(): List<InventoryItem>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -44,8 +47,11 @@ interface InventoryDao {
     @Delete
     suspend fun deleteInventoryItem(item: InventoryItem)
 
-    @Query("SELECT * FROM inventory_items WHERE currentStock <= minStockAlert")
+    @Query("SELECT * FROM inventory_items WHERE isArchived = 0 AND currentStock <= minStockAlert")
     fun getLowStockItems(): Flow<List<InventoryItem>>
+
+    @Query("DELETE FROM inventory_items")
+    suspend fun clearAllInventoryItems()
 }
 
 @Dao

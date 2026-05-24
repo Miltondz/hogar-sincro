@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class NavigationTab {
-    EXPENSES, SHOPPING, INVENTORY, SCANNER, SYNC
+    EXPENSES, SHOPPING, INVENTORY, SCANNER, SYNC, FUTURE
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +95,7 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                                     NavigationTab.INVENTORY -> Icons.Default.Inventory2
                                     NavigationTab.SCANNER -> Icons.Default.AutoAwesome
                                     NavigationTab.SYNC -> Icons.Default.CloudSync
+                                    NavigationTab.FUTURE -> Icons.Default.Upcoming
                                 },
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
@@ -108,6 +109,7 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                                     NavigationTab.INVENTORY -> "Despensa y Stock"
                                     NavigationTab.SCANNER -> "Escáner Inteligente"
                                     NavigationTab.SYNC -> "Sincronización Hogar"
+                                    NavigationTab.FUTURE -> "Mejoras del Hogar"
                                 },
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 20.sp
@@ -208,6 +210,14 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                     label = { Text("Hogar", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier.testTag("sync_tab")
                 )
+
+                NavigationBarItem(
+                    selected = currentTab == NavigationTab.FUTURE,
+                    onClick = { currentTab = NavigationTab.FUTURE },
+                    icon = { Icon(imageVector = if (currentTab == NavigationTab.FUTURE) Icons.Default.Upcoming else Icons.Outlined.Upcoming, contentDescription = "Mejoras") },
+                    label = { Text("Mejoras", fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                    modifier = Modifier.testTag("future_tab")
+                )
             }
         },
         snackbarHost = {
@@ -227,11 +237,12 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                 .padding(innerPadding)
         ) {
             when (currentTab) {
-                NavigationTab.EXPENSES -> ExpensesScreen(viewModel)
+                NavigationTab.EXPENSES -> ExpensesScreen(viewModel, onNavigateToTab = { currentTab = it })
                 NavigationTab.SHOPPING -> ShoppingScreen(viewModel)
                 NavigationTab.INVENTORY -> InventoryScreen(viewModel)
                 NavigationTab.SCANNER -> ScannerScreen(viewModel)
                 NavigationTab.SYNC -> SyncScreen(viewModel)
+                NavigationTab.FUTURE -> FutureScreen(viewModel)
             }
         }
     }

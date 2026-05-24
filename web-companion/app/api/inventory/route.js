@@ -25,6 +25,7 @@ export async function POST(request) {
       bestPrice,
       secondBestStore,
       secondBestPrice,
+      isArchived,
     } = body;
 
     const stock = Number(currentStock) || 0;
@@ -32,6 +33,7 @@ export async function POST(request) {
     const rate = Number(depletionRatePerDay) || 0;
     const bPrice = bestPrice ? Number(bestPrice) : null;
     const sPrice = secondBestPrice ? Number(secondBestPrice) : null;
+    const archived = isArchived || false;
     const lastUpdated = Date.now();
 
     if (id) {
@@ -39,8 +41,9 @@ export async function POST(request) {
       const q = `
         UPDATE inventory_items 
         SET name = $1, current_stock = $2, min_stock_alert = $3, unit = $4, depletion_rate_per_day = $5, 
-            best_store = $6, best_price = $7, second_best_store = $8, second_best_price = $9, last_updated = $10
-        WHERE id = $11
+            best_store = $6, best_price = $7, second_best_store = $8, second_best_price = $9, last_updated = $10,
+            is_archived = $11
+        WHERE id = $12
         RETURNING *
       `;
       const result = await query(q, [
@@ -54,14 +57,15 @@ export async function POST(request) {
         secondBestStore || null,
         sPrice,
         lastUpdated,
+        archived,
         id,
       ]);
       return NextResponse.json(result.rows[0]);
     } else {
       // Insert
       const q = `
-        INSERT INTO inventory_items (name, current_stock, min_stock_alert, unit, depletion_rate_per_day, best_store, best_price, second_best_store, second_best_price, last_updated)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO inventory_items (name, current_stock, min_stock_alert, unit, depletion_rate_per_day, best_store, best_price, second_best_store, second_best_price, last_updated, is_archived)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
       `;
       const result = await query(q, [
@@ -75,6 +79,7 @@ export async function POST(request) {
         secondBestStore || null,
         sPrice,
         lastUpdated,
+        archived,
       ]);
       return NextResponse.json(result.rows[0]);
     }
