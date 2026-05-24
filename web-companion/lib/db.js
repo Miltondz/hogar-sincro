@@ -3,8 +3,12 @@ import { Pool } from 'pg';
 let pool;
 
 if (!global.pgPool) {
+  const connectionString = process.env.NEON_DATABASE_URL;
+  const isNeon = connectionString && connectionString.includes('neon.tech');
+
   global.pgPool = new Pool({
-    connectionString: process.env.NEON_DATABASE_URL,
+    connectionString,
+    ssl: isNeon ? { rejectUnauthorized: false } : false,
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
