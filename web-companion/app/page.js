@@ -1137,7 +1137,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                             </div>
                             <div><input type="text" className="form-control" style={{ padding: '6px 10px', fontSize: '12.5px' }} value={item.name} onChange={(e) => handleUpdateStagedItem(item.tempId, 'name', e.target.value)} /></div>
                             <div><input type="text" className="form-control" style={{ padding: '6px 10px', fontSize: '12.5px' }} value={item.brand} onChange={(e) => handleUpdateStagedItem(item.tempId, 'brand', e.target.value)} /></div>
-                            <div><input type="number" step="0.1" className="form-control" style={{ padding: '6px 10px', fontSize: '12.5px' }} value={item.quantity} onChange={(e) => handleUpdateStagedItem(item.tempId, 'quantity', e.target.value)} /></div>
+                            <div><input type="number" step="1" min="0" className="form-control" style={{ padding: '6px 10px', fontSize: '12.5px' }} value={item.quantity} onChange={(e) => handleUpdateStagedItem(item.tempId, 'quantity', e.target.value)} /></div>
                             <div><input type="text" className="form-control" style={{ padding: '6px 10px', fontSize: '12.5px' }} value={item.unit} onChange={(e) => handleUpdateStagedItem(item.tempId, 'unit', e.target.value)} /></div>
                             <div style={{ display: 'flex', justifyContent: 'center' }}>
                               <button onClick={() => handleDeleteStagedItem(item.tempId)} className="btn btn-ghost btn-sm btn-danger btn-icon" style={{ width: '28px', height: '28px', padding: '6px' }}>
@@ -1170,7 +1170,7 @@ function Dashboard({ currentUser, householdCode, onLogout }) {
                         <div className="grid-2">
                           <div className="form-group">
                             <label className="form-label">Stock Actual</label>
-                            <input type="number" step="0.1" className="form-control" value={inventoryForm.currentStock} onChange={e => setInventoryForm({...inventoryForm, currentStock: e.target.value})} placeholder="0" required />
+                            <input type="number" step="1" min="0" className="form-control" value={inventoryForm.currentStock} onChange={e => setInventoryForm({...inventoryForm, currentStock: e.target.value})} placeholder="0" required />
                           </div>
                           <div className="form-group">
                             <label className="form-label">Unidad</label>

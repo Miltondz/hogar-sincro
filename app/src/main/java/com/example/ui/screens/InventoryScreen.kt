@@ -8,6 +8,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -537,7 +538,7 @@ fun InventoryScreen(viewModel: HomeViewModel) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Compact single-row inventory item
+// Compact single-row inventory item with stock status visuals
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 fun CompactInventoryRow(
@@ -553,174 +554,131 @@ fun CompactInventoryRow(
     onDeleteClick: () -> Unit
 ) {
     val isDepleted = item.currentStock == 0.0
+    val stockColor = if (isDepleted) Color(0xFFD32F2F) else Color(0xFF2E7D32)
     var showMenu by remember { mutableStateOf(false) }
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!isChecked) }
-            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        // Status strip (left edge)
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight()
+                .background(stockColor.copy(alpha = 0.7f))
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 10.dp, vertical = 10.dp)
         ) {
-            // Checkbox
-            Checkbox(
-                checked = isChecked,
-                onCheckedChange = onCheckedChange,
-                modifier = Modifier.size(24.dp),
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = isChecked,
+                    onCheckedChange = onCheckedChange,
+                    modifier = Modifier.size(24.dp),
+                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                 )
-            )
-            Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(8.dp))
 
-            // Name + depleted badge
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (isDepleted) {
-                        Spacer(Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(MaterialTheme.colorScheme.error)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text("AGOTADO", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                // Name + badges
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (isDepleted) {
+                            Spacer(Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFD32F2F))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("AGOTADO", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                     }
+                    if (item.bestStore != null && item.bestPrice != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${item.bestStore}  •  $${String.format(Locale.US, "%.2f", item.bestPrice)}/${item.unit}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-                // Price/store in one line (only if set)
-                if (item.bestStore != null && item.bestPrice != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
+
+                Spacer(Modifier.width(6.dp))
+
+                // Binary stock toggle: "TENGO" ↔ "AGOTADO"
+                OutlinedButton(
+                    onClick = if (isDepleted) onStockIncrease else onStockDecrease,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = stockColor),
+                    border = BorderStroke(1.dp, stockColor),
+                    modifier = Modifier.height(30.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                ) {
                     Text(
-                        text = "🏪 ${item.bestStore}  •  $${String.format(Locale.US, "%.2f", item.bestPrice)}/${item.unit}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.Gray,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = if (isDepleted) "TENGO" else "AGOTADO",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
+                }
+
+                // Context menu (⋮)
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(16.dp), tint = Color.Gray)
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("Editar") } },
+                            onClick = { showMenu = false; onEditClick() }
+                        )
+                        DropdownMenuItem(
+                            text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Archive, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("Archivar") } },
+                            onClick = { showMenu = false; onArchiveClick() }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text("Eliminar", color = MaterialTheme.colorScheme.error) } },
+                            onClick = { showMenu = false; onDeleteClick() }
+                        )
+                    }
                 }
             }
 
-            Spacer(Modifier.width(8.dp))
-
-            // Stock control: − stock + (small)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = onStockDecrease,
-                    modifier = Modifier.size(28.dp)
+            // Quantity selector when checked
+            AnimatedVisibility(visible = isChecked) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 32.dp, top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Remove, null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("Cantidad a comprar:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = { if (checkedQty > 1) onQtyChange(checkedQty - 1) }, modifier = Modifier.size(26.dp)) {
+                        Icon(Icons.Default.Remove, null, modifier = Modifier.size(12.dp))
+                    }
+                    Text("${checkedQty.toInt()} ${item.unit}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    IconButton(onClick = { onQtyChange(checkedQty + 1) }, modifier = Modifier.size(26.dp)) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(12.dp))
+                    }
                 }
-                Text(
-                    text = "${
-                        if (item.currentStock % 1.0 == 0.0)
-                            item.currentStock.toInt().toString()
-                        else
-                            String.format(Locale.US, "%.1f", item.currentStock)
-                    } ${item.unit}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.widthIn(min = 40.dp),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1
-                )
-                IconButton(
-                    onClick = onStockIncrease,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Add, null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Context menu (⋮)
-            Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(16.dp), tint = Color.Gray)
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Editar")
-                            }
-                        },
-                        onClick = { showMenu = false; onEditClick() }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Archive, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Archivar")
-                            }
-                        },
-                        onClick = { showMenu = false; onArchiveClick() }
-                    )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Eliminar", color = MaterialTheme.colorScheme.error)
-                            }
-                        },
-                        onClick = { showMenu = false; onDeleteClick() }
-                    )
-                }
-            }
-        }
-
-        // Quantity field when checked (shown inline below the row)
-        AnimatedVisibility(visible = isChecked) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 32.dp, top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    "Cantidad a comprar:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold
-                )
-                IconButton(
-                    onClick = { if (checkedQty > 1) onQtyChange(checkedQty - 1) },
-                    modifier = Modifier.size(26.dp)
-                ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(12.dp)) }
-                Text(
-                    "${checkedQty.toInt()} ${item.unit}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                IconButton(
-                    onClick = { onQtyChange(checkedQty + 1) },
-                    modifier = Modifier.size(26.dp)
-                ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(12.dp)) }
             }
         }
     }

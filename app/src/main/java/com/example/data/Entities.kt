@@ -58,7 +58,7 @@ data class SyncSettings(
     val isSyncEnabled: Boolean = true,
     val lastSyncTimestamp: Long = System.currentTimeMillis(),
     val members: String = "Milton,Alejandra", // Comma-separated list of members
-    val geminiModel: String = "gemini-3.5-flash"
+    val geminiModel: String = "gemini-2.5-flash"
 )
 
 

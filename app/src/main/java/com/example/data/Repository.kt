@@ -54,21 +54,11 @@ class Repository(private val database: AppDatabase) {
         shoppingDao.clearAll()
     }
 
-    // Pre-populate Database with realistic household data if empty
+    // Create default SyncSettings only on first launch (no existing settings)
     suspend fun prepopulateIfEmpty() {
-        // Force complete clean state for Milton & Alejandra
         val settings = syncSettings.first()
-        if (settings == null || !settings.members.contains("Alejandra")) {
-            // Delete all local data
-            clearAllLocalData()
-            
-            // Save clean settings
-            val cleanSettings = SyncSettings(
-                members = "Milton,Alejandra",
-                activeUser = "Milton",
-                householdCode = "HOGAR-5892"
-            )
-            syncSettingsDao.saveSyncSettings(cleanSettings)
+        if (settings == null) {
+            syncSettingsDao.saveSyncSettings(SyncSettings())
         }
     }
 

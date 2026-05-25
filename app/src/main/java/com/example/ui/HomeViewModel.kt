@@ -276,22 +276,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             addSyncActivity(activeUser, "${if (updated.isBought) "Compró" else "Desmarcó"} '${item.productName}'", "COMPRAS")
 
             if (updated.isBought) {
-                // Instantly register this as a monthly variable expense!
-                repository.insertExpense(
-                    Expense(
-                        title = "${item.productName} (${item.targetStore ?: "Compras"})",
-                        amount = item.estimatedPrice * item.quantityToBuy,
-                        category = "Alimentos",
-                        paidBy = activeUser
+                // Only register expense individually when NOT in a cart session.
+                // Cart sessions log a single expense via closeCartAndLogExpense().
+                if (!shoppingCartActive.value) {
+                    repository.insertExpense(
+                        Expense(
+                            title = "${item.productName} (${item.targetStore ?: "Compras"})",
+                            amount = item.estimatedPrice * item.quantityToBuy,
+                            category = "Alimentos",
+                            paidBy = activeUser
+                        )
                     )
-                )
+                }
 
-                // Refill the corresponding inventory item if exists!
+                // Refill the corresponding inventory item if exists
                 val matchingInv = inventoryItems.value.find { it.name.equals(item.productName, ignoreCase = true) }
                 if (matchingInv != null) {
-                    val newStock = matchingInv.currentStock + item.quantityToBuy
                     repository.updateInventoryItem(matchingInv.copy(
-                        currentStock = newStock,
+                        currentStock = matchingInv.currentStock + item.quantityToBuy,
                         lastUpdated = System.currentTimeMillis()
                     ))
                 }
@@ -549,13 +551,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             repository.clearAllLocalData()
-
-            val resetSettings = SyncSettings(
-                activeUser = "Milton",
-                members = "Milton,Alejandra",
-                householdCode = "HOGAR-5892"
-            )
-            repository.saveSyncSettings(resetSettings)
+            // Preserve household settings (members, code, active user)
             syncWithNeon()
             
             generateSmartAlerts()
@@ -656,7 +652,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     Expense(
                         title = "Compra en ${receipt.storeName}",
                         amount = receipt.totalAmount,
-                        category = receipt.category
+                        category = receipt.category,
+                        paidBy = syncSettings.value.activeUser
                     )
                 )
 
