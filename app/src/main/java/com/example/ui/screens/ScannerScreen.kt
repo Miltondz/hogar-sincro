@@ -15,6 +15,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -58,6 +60,7 @@ fun ScannerScreen(viewModel: HomeViewModel) {
     val context = LocalContext.current
     val isScanning by viewModel.isScanning.collectAsState()
     val scanResult by viewModel.scanResult.collectAsState()
+    val pendingReceipt by viewModel.pendingReceipt.collectAsState()
 
     // State for selected image — reset every new scan session
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -119,6 +122,79 @@ fun ScannerScreen(viewModel: HomeViewModel) {
         } else {
             funnyMessage = ""
         }
+    }
+
+    // Receipt import confirmation dialog
+    if (pendingReceipt != null) {
+        val receipt = pendingReceipt!!
+        AlertDialog(
+            onDismissRequest = { viewModel.clearPendingReceipt() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ShoppingCart, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Confirmar Importación", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(receipt.storeName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(receipt.category, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        }
+                        Text(
+                            "$${String.format(java.util.Locale.US, "%.2f", receipt.totalAmount)}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "${receipt.items.size} artículos detectados — se marcarán como en stock:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(receipt.items) { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(item.name, fontSize = 12.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "$${String.format(java.util.Locale.US, "%.2f", item.price)}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmReceiptImport(receipt) },
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Importar y Guardar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.clearPendingReceipt() }) { Text("Cancelar") }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 
     // Camera/Gallery chooser dialog

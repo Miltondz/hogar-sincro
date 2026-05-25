@@ -69,6 +69,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isScanningLarder = MutableStateFlow(false)
     val larderScanResult = MutableStateFlow<List<ExtractedLarderItem>?>(null)
 
+    // Pending receipt awaiting user confirmation before persisting
+    val pendingReceipt = MutableStateFlow<ExtractedReceipt?>(null)
+
     // Price scan state flows
     val isScanningPrice = MutableStateFlow(false)
     val priceScanResult = MutableStateFlow<ExtractedProductPrice?>(null)
@@ -442,21 +445,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             items.forEach { scanItem ->
                 val match = existing.find { it.name.equals(scanItem.name, ignoreCase = true) }
                 if (match != null) {
-                    val updated = match.copy(
-                        currentStock = match.currentStock + scanItem.quantity,
-                        lastUpdated = System.currentTimeMillis()
-                    )
-                    repository.updateInventoryItem(updated)
+                    // Binary: ensure has stock (≥1); don't override if already stocked
+                    if (match.currentStock == 0.0) {
+                        repository.updateInventoryItem(match.copy(
+                            currentStock = 1.0,
+                            lastUpdated = System.currentTimeMillis()
+                        ))
+                    }
                 } else {
-                    val newItem = InventoryItem(
+                    repository.insertInventoryItem(InventoryItem(
                         name = scanItem.name,
-                        currentStock = scanItem.quantity,
-                        minStockAlert = 1.0,
+                        currentStock = 1.0,
+                        minStockAlert = 0.0,
                         unit = scanItem.unit,
-                        depletionRatePerDay = 0.1,
+                        depletionRatePerDay = 0.0,
                         lastUpdated = System.currentTimeMillis()
-                    )
-                    repository.insertInventoryItem(newItem)
+                    ))
                 }
             }
             clearLarderScanResult()
@@ -644,62 +648,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val modelToUse = syncSettings.value.geminiModel
                 val receipt = GeminiScannerService.scanReceipt(capturedBitmap, modelName = modelToUse, sampleType = sampleType)
                 scanResult.value = receipt
-
-
-                // Automatically import products & expenses from Receipt!
-                // 1. Add as Variable Expense
-                repository.insertExpense(
-                    Expense(
-                        title = "Compra en ${receipt.storeName}",
-                        amount = receipt.totalAmount,
-                        category = receipt.category,
-                        paidBy = syncSettings.value.activeUser
-                    )
-                )
-
-                // 2. Insert items into inventory or shopping items
-                receipt.items.forEach { item ->
-                    // Check if exists in inventory to improve price/store data
-                    val matchingInv = inventoryItems.value.find { it.name.equals(item.name, ignoreCase = true) }
-                    if (matchingInv != null) {
-                        // Update best price and best store if cheapest
-                        val isBestPrice = matchingInv.bestPrice == null || item.price < matchingInv.bestPrice
-                        val updatedInv = if (isBestPrice) {
-                            matchingInv.copy(
-                                secondBestPrice = matchingInv.bestPrice,
-                                secondBestStore = matchingInv.bestStore,
-                                bestPrice = item.price,
-                                bestStore = receipt.storeName,
-                                currentStock = matchingInv.currentStock + item.quantity,
-                                lastUpdated = System.currentTimeMillis()
-                            )
-                        } else {
-                            matchingInv.copy(
-                                currentStock = matchingInv.currentStock + item.quantity,
-                                lastUpdated = System.currentTimeMillis()
-                            )
-                        }
-                        repository.updateInventoryItem(updatedInv)
-                    } else {
-                        // Create as new inventory item with current stock
-                        repository.insertInventoryItem(
-                            InventoryItem(
-                                name = item.name,
-                                currentStock = item.quantity,
-                                minStockAlert = 1.0,
-                                unit = "u",
-                                depletionRatePerDay = 0.1, // Default slow depletion
-                                bestStore = receipt.storeName,
-                                bestPrice = item.price
-                            )
-                        )
-                    }
-                }
-
-                generateSmartAlerts()
-                showSnackbar("Ticket de ${receipt.storeName} importado ✓ — $${String.format("%.2f", receipt.totalAmount)}", SnackbarType.SUCCESS)
-                val activeUser = syncSettings.value.activeUser
-                addSyncActivity(activeUser, "Escaneó ticket de compras de '${receipt.storeName}' por $${receipt.totalAmount}.", "SCANNER")
+                // Show confirmation dialog — do NOT persist yet
+                pendingReceipt.value = receipt
+                showSnackbar("Ticket extraído. Confirmá para importar.", SnackbarType.INFO)
             } catch (e: Exception) {
                 Log.e("HomeViewModel", "Scanner exception during processing: ${e.message}", e)
                 showSnackbar("Error al escanear: ${e.message?.take(60) ?: "Error desconocido"}", SnackbarType.ERROR)
@@ -711,6 +662,66 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearScanResult() {
         scanResult.value = null
+    }
+
+    fun clearPendingReceipt() {
+        pendingReceipt.value = null
+    }
+
+    fun confirmReceiptImport(receipt: ExtractedReceipt) {
+        viewModelScope.launch {
+            try {
+                repository.insertExpense(
+                    Expense(
+                        title = "Compra en ${receipt.storeName}",
+                        amount = receipt.totalAmount,
+                        category = receipt.category,
+                        paidBy = syncSettings.value.activeUser
+                    )
+                )
+                receipt.items.forEach { item ->
+                    val matchingInv = inventoryItems.value.find { it.name.equals(item.name, ignoreCase = true) }
+                    if (matchingInv != null) {
+                        val isBestPrice = matchingInv.bestPrice == null || item.price < matchingInv.bestPrice
+                        val updatedInv = if (isBestPrice) {
+                            matchingInv.copy(
+                                secondBestPrice = matchingInv.bestPrice,
+                                secondBestStore = matchingInv.bestStore,
+                                bestPrice = item.price,
+                                bestStore = receipt.storeName,
+                                currentStock = 1.0,
+                                lastUpdated = System.currentTimeMillis()
+                            )
+                        } else {
+                            matchingInv.copy(
+                                currentStock = maxOf(matchingInv.currentStock, 1.0),
+                                lastUpdated = System.currentTimeMillis()
+                            )
+                        }
+                        repository.updateInventoryItem(updatedInv)
+                    } else {
+                        repository.insertInventoryItem(
+                            InventoryItem(
+                                name = item.name,
+                                currentStock = 1.0,
+                                minStockAlert = 0.0,
+                                unit = "u",
+                                depletionRatePerDay = 0.0,
+                                bestStore = receipt.storeName,
+                                bestPrice = item.price
+                            )
+                        )
+                    }
+                }
+                pendingReceipt.value = null
+                generateSmartAlerts()
+                showSnackbar("Ticket de ${receipt.storeName} importado ✓ — $${String.format("%.2f", receipt.totalAmount)}", SnackbarType.SUCCESS)
+                val activeUser = syncSettings.value.activeUser
+                addSyncActivity(activeUser, "Importó ticket de '${receipt.storeName}' por $${receipt.totalAmount}.", "SCANNER")
+            } catch (e: Exception) {
+                showSnackbar("Error al importar: ${e.message?.take(60)}", SnackbarType.ERROR)
+            }
+        }
     }
 
     fun dismissNotification(id: String) {

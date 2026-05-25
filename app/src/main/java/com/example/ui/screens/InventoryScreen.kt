@@ -441,8 +441,12 @@ fun InventoryScreen(viewModel: HomeViewModel) {
 
         // Larder scan verification tray
         if (larderScanResult != null) {
-            var confirmedList by remember(larderScanResult) {
-                mutableStateOf(larderScanResult ?: emptyList())
+            val allItems = larderScanResult ?: emptyList()
+            var checkedNames by remember(larderScanResult) {
+                mutableStateOf(allItems.map { it.name }.toSet())
+            }
+            var displayList by remember(larderScanResult) {
+                mutableStateOf(allItems)
             }
             AlertDialog(
                 onDismissRequest = { viewModel.clearLarderScanResult() },
@@ -456,66 +460,62 @@ fun InventoryScreen(viewModel: HomeViewModel) {
                 text = {
                     Column(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                         Text(
-                            "Revisa y ajusta las cantidades antes de importar.",
+                            "Marca los productos que tenés en stock.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray,
                             modifier = Modifier.padding(bottom = 10.dp)
                         )
                         LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(confirmedList.size) { index ->
-                                val scanItem = confirmedList[index]
+                            items(displayList.size) { index ->
+                                val scanItem = displayList[index]
+                                val isChecked = scanItem.name in checkedNames
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (isChecked) Color(0xFF2E7D32).copy(alpha = 0.08f)
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        )
+                                        .clickable {
+                                            checkedNames = if (isChecked) checkedNames - scanItem.name
+                                            else checkedNames + scanItem.name
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = {
+                                            checkedNames = if (isChecked) checkedNames - scanItem.name
+                                            else checkedNames + scanItem.name
+                                        },
+                                        modifier = Modifier.size(24.dp),
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = Color(0xFF2E7D32)
+                                        )
+                                    )
+                                    Spacer(Modifier.width(8.dp))
                                     Text(
                                         scanItem.name,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 13.sp,
                                         modifier = Modifier.weight(1f),
+                                        color = if (isChecked) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    IconButton(
+                                        onClick = {
+                                            displayList = displayList.toMutableList().also { it.removeAt(index) }
+                                            checkedNames = checkedNames - scanItem.name
+                                        },
+                                        modifier = Modifier.size(28.dp)
                                     ) {
-                                        IconButton(
-                                            onClick = {
-                                                val updated = confirmedList.toMutableList()
-                                                updated[index] = scanItem.copy(quantity = maxOf(0.0, scanItem.quantity - 1.0))
-                                                confirmedList = updated
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(14.dp)) }
-                                        Text(
-                                            "${scanItem.quantity.toInt()} ${scanItem.unit}",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            modifier = Modifier.widthIn(min = 36.dp),
-                                            textAlign = TextAlign.Center
-                                        )
-                                        IconButton(
-                                            onClick = {
-                                                val updated = confirmedList.toMutableList()
-                                                updated[index] = scanItem.copy(quantity = scanItem.quantity + 1.0)
-                                                confirmedList = updated
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp)) }
-                                        IconButton(
-                                            onClick = {
-                                                confirmedList = confirmedList.toMutableList().also { it.removeAt(index) }
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        ) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp)) }
+                                        Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
                                     }
                                 }
                             }
@@ -524,9 +524,12 @@ fun InventoryScreen(viewModel: HomeViewModel) {
                 },
                 confirmButton = {
                     Button(
-                        onClick = { viewModel.commitLarderScanItems(confirmedList) },
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text("Importar Todo") }
+                        onClick = {
+                            viewModel.commitLarderScanItems(displayList.filter { it.name in checkedNames })
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = checkedNames.isNotEmpty()
+                    ) { Text("Importar ${checkedNames.size}") }
                 },
                 dismissButton = {
                     TextButton(onClick = { viewModel.clearLarderScanResult() }) { Text("Descartar") }
