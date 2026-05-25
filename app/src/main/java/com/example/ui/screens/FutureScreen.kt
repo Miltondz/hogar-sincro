@@ -22,6 +22,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.HomeViewModel
+import com.example.ui.theme.BudgetOver
+import com.example.ui.theme.StockOk
 import java.util.Locale
 
 @Composable
@@ -173,7 +175,7 @@ fun FutureScreen(viewModel: HomeViewModel) {
                                             },
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (balance >= -0.01) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                            color = if (balance >= -0.01) StockOk else BudgetOver
                                         )
                                     }
                                 }

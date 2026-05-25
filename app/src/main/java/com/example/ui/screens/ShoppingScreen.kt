@@ -41,6 +41,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.ShoppingItem
 import com.example.ui.HomeViewModel
+import com.example.ui.theme.BudgetOver
+import com.example.ui.theme.StockOk
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,7 +130,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                     Icon(
                                         imageVector = Icons.Default.ShoppingCart,
                                         contentDescription = null,
-                                        tint = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.primary,
+                                        tint = if (overBudget) BudgetOver else MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -136,14 +138,14 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                         text = "Compra Activa",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.onPrimaryContainer
+                                        color = if (overBudget) BudgetOver else MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                                 
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.primary)
+                                        .background(if (overBudget) BudgetOver else MaterialTheme.colorScheme.primary)
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
@@ -164,14 +166,14 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                     Text(
                                         text = "Gastado Real",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (overBudget) Color(0xFFC62828).copy(alpha = 0.8f) else Color.Gray,
+                                        color = if (overBudget) BudgetOver.copy(alpha = 0.8f) else Color.Gray,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
                                         text = "$${String.format(Locale.US, "%,.2f", totalBoughtCost)}",
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Black,
-                                        color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.onPrimaryContainer
+                                        color = if (overBudget) BudgetOver else MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                                 
@@ -180,14 +182,14 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                     Text(
                                         text = if (overBudget) "Excedido por" else "Disponible",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (overBudget) Color(0xFFC62828).copy(alpha = 0.8f) else Color.Gray,
+                                        color = if (overBudget) BudgetOver.copy(alpha = 0.8f) else Color.Gray,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
                                         text = "$${String.format(Locale.US, "%,.2f", kotlin.math.abs(remaining))}",
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Black,
-                                        color = if (overBudget) Color(0xFFC62828) else Color(0xFF2E7D32)
+                                        color = if (overBudget) BudgetOver else StockOk
                                     )
                                 }
                             }
@@ -200,7 +202,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                         .fillMaxWidth()
                                         .height(10.dp)
                                         .clip(RoundedCornerShape(5.dp)),
-                                    color = if (overBudget) Color(0xFFC62828) else MaterialTheme.colorScheme.primary,
+                                    color = if (overBudget) BudgetOver else MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                                 )
                             }
@@ -233,7 +235,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                     onClick = { showFinishCartDialog = true },
                                     modifier = Modifier.weight(1f).height(48.dp),
                                     shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                    colors = ButtonDefaults.buttonColors(containerColor = StockOk)
                                 ) {
                                     Icon(Icons.Default.CheckCircle, null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -278,12 +280,21 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                         fontWeight = FontWeight.Bold
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "$${String.format(Locale.US, "%,.2f", possibleCostPending)}",
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Black,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    if (possibleCostPending > 0.0) {
+                                        Text(
+                                            text = "$${String.format(Locale.US, "%,.2f", possibleCostPending)}",
+                                            style = MaterialTheme.typography.headlineMedium,
+                                            fontWeight = FontWeight.Black,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Sin precios cargados",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.Gray
+                                        )
+                                    }
                                 }
                                 
                                 Box(
@@ -364,7 +375,7 @@ fun ShoppingScreen(viewModel: HomeViewModel) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    tint = Color(0xFF2E7D32),
+                                    tint = StockOk,
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
@@ -759,7 +770,7 @@ fun ShoppingItemRow(
                 checked = item.isBought,
                 onCheckedChange = { onToggle() },
                 colors = CheckboxDefaults.colors(
-                    checkedColor = Color(0xFF2E7D32)
+                    checkedColor = StockOk
                 )
             )
 

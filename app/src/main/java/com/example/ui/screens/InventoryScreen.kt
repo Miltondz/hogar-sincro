@@ -42,6 +42,8 @@ import androidx.core.content.FileProvider
 import com.example.data.ExtractedLarderItem
 import com.example.data.InventoryItem
 import com.example.ui.HomeViewModel
+import com.example.ui.theme.StockDepleted
+import com.example.ui.theme.StockOk
 import java.io.File
 import java.util.Locale
 
@@ -476,7 +478,7 @@ fun InventoryScreen(viewModel: HomeViewModel) {
                                     modifier = Modifier.fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
-                                            if (isChecked) Color(0xFF2E7D32).copy(alpha = 0.08f)
+                                            if (isChecked) StockOk.copy(alpha = 0.08f)
                                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                                         )
                                         .clickable {
@@ -494,7 +496,7 @@ fun InventoryScreen(viewModel: HomeViewModel) {
                                         },
                                         modifier = Modifier.size(24.dp),
                                         colors = CheckboxDefaults.colors(
-                                            checkedColor = Color(0xFF2E7D32)
+                                            checkedColor = StockOk
                                         )
                                     )
                                     Spacer(Modifier.width(8.dp))
@@ -557,7 +559,7 @@ fun CompactInventoryRow(
     onDeleteClick: () -> Unit
 ) {
     val isDepleted = item.currentStock == 0.0
-    val stockColor = if (isDepleted) Color(0xFFD32F2F) else Color(0xFF2E7D32)
+    val stockColor = if (isDepleted) StockDepleted else StockOk
     var showMenu by remember { mutableStateOf(false) }
 
     Row(
@@ -605,7 +607,7 @@ fun CompactInventoryRow(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFFD32F2F))
+                                    .background(StockDepleted)
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text("AGOTADO", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)

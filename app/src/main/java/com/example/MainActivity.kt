@@ -30,6 +30,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.HomeViewModel
 import com.example.ui.SnackbarType
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.StockDepleted
+import com.example.ui.theme.StockOk
 import com.example.ui.screens.*
 import java.util.Locale
 
@@ -126,7 +128,7 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFFD32F2F).copy(alpha = 0.12f))
+                                    .background(StockDepleted.copy(alpha = 0.12f))
                                     .clickable { currentTab = NavigationTab.SYNC }
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
@@ -134,7 +136,7 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                                     Icon(
                                         imageVector = Icons.Default.CloudOff,
                                         contentDescription = "Sin conexión Neon",
-                                        tint = Color(0xFFD32F2F),
+                                        tint = StockDepleted,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -142,7 +144,7 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                                         text = "Offline",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFD32F2F)
+                                        color = StockDepleted
                                     )
                                 }
                             }
@@ -361,10 +363,10 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                                                 .clip(CircleShape)
                                                 .background(
                                                     when (alert.type) {
-                                                        "ALERTA" -> Color(0xFFD32F2F)
+                                                        "ALERTA" -> StockDepleted
                                                         "ADVERTENCIA" -> Color(0xFFFF9800)
                                                         "ALQUILER_SERVICIO" -> MaterialTheme.colorScheme.primary
-                                                        else -> Color(0xFF2E7D32)
+                                                        else -> StockOk
                                                     }
                                                 ),
                                             contentAlignment = Alignment.Center

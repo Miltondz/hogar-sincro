@@ -1,9 +1,11 @@
 package com.example.ui.screens
 
+import android.graphics.Bitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -41,6 +43,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.HomeViewModel
 import com.example.ui.SyncActivity
+import com.example.ui.theme.StockOk
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -218,7 +221,7 @@ fun SyncScreen(viewModel: HomeViewModel) {
                         
                         // Status Pill Badge with Glowing Pulse Indicator
                         val badgeColor = when (neonStatus) {
-                            "CONNECTED" -> Color(0xFF2E7D32)
+                            "CONNECTED" -> StockOk
                             "CONNECTING" -> Color(0xFFEF6C00)
                             "ERROR" -> Color(0xFFC62828)
                             else -> Color.DarkGray
@@ -516,14 +519,12 @@ fun SyncScreen(viewModel: HomeViewModel) {
                             val selectedModel = settings.geminiModel
 
                             val geminiModels = listOf(
-                                Triple("gemini-3.5-flash",        "3.5 Flash",        "Más inteligente (Recomendado)"),
-                                Triple("gemini-3.1-flash-lite-preview", "3.1 Flash-Lite", "Eficiente y rápido")
+                                Triple("gemini-3.5-flash",   "3.5 Flash",  "Más inteligente"),
+                                Triple("gemini-2.5-flash",   "2.5 Flash",  "Estable y gratuito"),
+                                Triple("gemini-1.5-flash",   "1.5 Flash",  "Ligero y gratuito")
                             )
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 geminiModels.forEach { (modelId, label, sublabel) ->
                                     val isSelected = selectedModel == modelId
                                     Button(
@@ -533,11 +534,15 @@ fun SyncScreen(viewModel: HomeViewModel) {
                                             contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                         ),
                                         shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.weight(1f).height(52.dp)
+                                        modifier = Modifier.fillMaxWidth().height(48.dp)
                                     ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            Text(sublabel, fontSize = 8.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else Color.Gray)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Text(sublabel, fontSize = 10.sp, color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else Color.Gray)
                                         }
                                     }
                                 }
@@ -670,9 +675,9 @@ fun SyncScreen(viewModel: HomeViewModel) {
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF2E7D32))
+                                .background(StockOk)
                         )
-                        Text("VIVO", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color(0xFF2E7D32))
+                        Text("VIVO", fontSize = 8.sp, fontWeight = FontWeight.Black, color = StockOk)
                     }
                 }
             }
@@ -1112,6 +1117,23 @@ fun MockQRCode(
     codeText: String,
     modifier: Modifier = Modifier
 ) {
+    val qrBitmap = remember(codeText) {
+        try {
+            val writer = com.google.zxing.qrcode.QRCodeWriter()
+            val hints = mapOf(com.google.zxing.EncodeHintType.MARGIN to 1)
+            val bitMatrix = writer.encode(codeText, com.google.zxing.BarcodeFormat.QR_CODE, 512, 512, hints)
+            val bmp = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+            for (x in 0 until 512) {
+                for (y in 0 until 512) {
+                    bmp.setPixel(x, y, if (bitMatrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                }
+            }
+            bmp
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     Card(
         modifier = modifier
             .size(100.dp)
@@ -1121,55 +1143,22 @@ fun MockQRCode(
         border = BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp),
+            modifier = Modifier.fillMaxSize().padding(8.dp),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val size = size.width
-                val numGrid = 15
-                val blockSize = size / numGrid
-
-                fun drawFinderPattern(x: Int, y: Int) {
-                    drawRect(
-                        color = Color.Black,
-                        topLeft = Offset(x * blockSize, y * blockSize),
-                        size = Size(3 * blockSize, 3 * blockSize)
-                    )
-                    drawRect(
-                        color = Color.White,
-                        topLeft = Offset((x + 0.5f) * blockSize, (y + 0.5f) * blockSize),
-                        size = Size(2 * blockSize, 2 * blockSize)
-                    )
-                    drawRect(
-                        color = Color.Black,
-                        topLeft = Offset((x + 1) * blockSize, (y + 1) * blockSize),
-                        size = Size(blockSize, blockSize)
-                    )
-                }
-
-                drawFinderPattern(0, 0)
-                drawFinderPattern(numGrid - 3, 0)
-                drawFinderPattern(0, numGrid - 3)
-
-                val hash = codeText.hashCode()
-                for (row in 0 until numGrid) {
-                    for (col in 0 until numGrid) {
-                        if ((row < 4 && col < 4) || (row < 4 && col >= numGrid - 4) || (row >= numGrid - 4 && col < 4)) {
-                            continue
-                        }
-                        val bitIndex = (row * numGrid + col) % 32
-                        val drawBlock = ((hash ushr bitIndex) and 1) == 1 || (row + col) % 3 == 0
-                        if (drawBlock) {
-                            drawRect(
-                                color = Color.Black,
-                                topLeft = Offset(col * blockSize, row * blockSize),
-                                size = Size(blockSize, blockSize)
-                            )
-                        }
-                    }
-                }
+            if (qrBitmap != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = qrBitmap.asImageBitmap(),
+                    contentDescription = "QR $codeText",
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.QrCode2,
+                    contentDescription = null,
+                    tint = Color.Gray,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }

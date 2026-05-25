@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.HomeViewModel
+import com.example.ui.theme.BudgetOver
+import com.example.ui.theme.StockOk
 import com.example.data.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -148,9 +150,9 @@ fun WebCompanionScreen(viewModel: HomeViewModel, onBackToMobile: () -> Unit) {
                             .clip(RoundedCornerShape(4.dp))
                             .background(
                                 when (neonStatus) {
-                                    "CONNECTED" -> Color(0xFF2E7D32)
+                                    "CONNECTED" -> StockOk
                                     "CONNECTING" -> Color(0xFFEF6C00)
-                                    "ERROR" -> Color(0xFFC62828)
+                                    "ERROR" -> BudgetOver
                                     else -> Color(0xFF37474F)
                                 }
                             )
@@ -541,7 +543,7 @@ fun WebCompanionScreen(viewModel: HomeViewModel, onBackToMobile: () -> Unit) {
                                                         modifier = Modifier
                                                             .size(8.dp)
                                                             .clip(CircleShape)
-                                                            .background(if (isLow) Color(0xFFC62828) else Color(0xFF2E7D32))
+                                                            .background(if (isLow) BudgetOver else StockOk)
                                                     )
                                                     Spacer(modifier = Modifier.width(8.dp))
                                                     Text(item.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))

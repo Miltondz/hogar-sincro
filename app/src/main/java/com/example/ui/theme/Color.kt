@@ -27,3 +27,7 @@ val HDOnErrorContainer = Color(0xFF410002)
 
 val HDSyncGreen = Color(0xFF22C55E)
 val HDAverageOrange = Color(0xFFD97706)
+
+val StockDepleted = Color(0xFFD32F2F)
+val StockOk = Color(0xFF2E7D32)
+val BudgetOver = Color(0xFFC62828)
