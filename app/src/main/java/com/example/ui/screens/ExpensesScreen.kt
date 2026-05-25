@@ -266,51 +266,33 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
                 }
             }
 
-            // Predictive summary Box (Mejoras y predicciones de gastos)
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
-                    ),
-                    shape = RoundedCornerShape(18.dp),
-                    border = ButtonDefaults.outlinedButtonBorder
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            // Expense count summary
+            if (expenses.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)),
+                        shape = RoundedCornerShape(18.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Analytics,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Predicción de Fin de Mes",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            val estimatedTotals = totalExpenses + 120.00
-                            Text(
-                                text = "Proyección de gastos para el mes actual: $${String.format(Locale.US, "%,.2f", estimatedTotals)}. Un 4% menor al promedio histórico anterior debido a precios optimizados.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${expenses.filter { it.isRecurring }.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                                Text("Recurrentes", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            }
+                            VerticalDivider(modifier = Modifier.height(36.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${expenses.filter { !it.isRecurring }.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.secondary)
+                                Text("Variables", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            }
+                            VerticalDivider(modifier = Modifier.height(36.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${expenses.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                                Text("Total registros", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            }
                         }
                     }
                 }
@@ -552,10 +534,15 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
         }
 
         if (showAddDialog) {
+            val members = remember(syncSettings.members) {
+                syncSettings.members.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            }
             AddExpenseDialog(
+                members = members,
+                activeUser = syncSettings.activeUser,
                 onDismiss = { showAddDialog = false },
-                onAdd = { title, amt, cat, isRec, due ->
-                    viewModel.addExpense(title, amt, cat, isRec, due)
+                onAdd = { title, amt, cat, isRec, due, paidBy ->
+                    viewModel.addExpense(title, amt, cat, isRec, due, paidBy)
                     showAddDialog = false
                 }
             )
@@ -565,136 +552,106 @@ fun ExpensesScreen(viewModel: HomeViewModel, onNavigateToTab: (NavigationTab) ->
 
 @Composable
 fun ExpenseRow(expense: Expense, onDelete: () -> Unit) {
+    val catColor = colorsForCategory(expense.category)
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Category Icon
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Category color strip
             Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when (expense.category) {
-                            "Alquiler" -> colorsForCategory("Alquiler").copy(alpha = 0.15f)
-                            "Servicio" -> colorsForCategory("Servicio").copy(alpha = 0.15f)
-                            "Alimentos" -> colorsForCategory("Alimentos").copy(alpha = 0.15f)
-                            else -> colorsForCategory("Diverso").copy(alpha = 0.15f)
-                        }
-                    ),
-                contentAlignment = Alignment.Center
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .background(catColor, RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
+            )
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = when (expense.category) {
-                        "Alquiler" -> Icons.Outlined.Home
-                        "Servicio" -> Icons.Outlined.ElectricalServices
-                        "Alimentos" -> Icons.Outlined.LocalGroceryStore
-                        else -> Icons.Outlined.ReceiptLong
-                    },
-                    contentDescription = null,
-                    tint = colorsForCategory(expense.category)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = expense.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Category Icon
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(catColor.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = expense.category,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = when (expense.category) {
+                            "Alquiler" -> Icons.Outlined.Home
+                            "Servicio" -> Icons.Outlined.ElectricalServices
+                            "Alimentos" -> Icons.Outlined.LocalGroceryStore
+                            else -> Icons.Outlined.ReceiptLong
+                        },
+                        contentDescription = null,
+                        tint = catColor,
+                        modifier = Modifier.size(20.dp)
                     )
-                    
-                    // Dynamic payment author badge
-                    val paidColor = when (expense.paidBy) {
-                        "Milton" -> MaterialTheme.colorScheme.primary
-                        "Alejandra" -> Color(0xFFE91E63)
-                        "Carlos" -> Color(0xFFFF9800)
-                        "Laura" -> Color(0xFF4CAF50)
-                        else -> Color(0xFF9C27B0)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(paidColor.copy(alpha = 0.12f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = expense.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = expense.paidBy,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Black,
-                            color = paidColor
-                        )
-                    }
-                    
-                    if (expense.isRecurring && expense.recurringDueDate != null) {
+                        val paidColor = when (expense.paidBy) {
+                            "Milton" -> MaterialTheme.colorScheme.primary
+                            "Alejandra" -> Color(0xFFE91E63)
+                            "Carlos" -> Color(0xFFFF9800)
+                            "Laura" -> Color(0xFF4CAF50)
+                            else -> Color(0xFF9C27B0)
+                        }
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .background(paidColor.copy(alpha = 0.12f))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
+                            Text(expense.paidBy, style = MaterialTheme.typography.labelSmall, fontSize = 9.sp, fontWeight = FontWeight.Black, color = paidColor)
+                        }
+                        if (expense.isRecurring && expense.recurringDueDate != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(catColor.copy(alpha = 0.10f))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            ) {
+                                Text("Vence: ${expense.recurringDueDate}", style = MaterialTheme.typography.labelSmall, fontSize = 9.sp, color = catColor, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
                             Text(
-                                text = "Recurrente: ${expense.recurringDueDate}",
+                                text = SimpleDateFormat("dd MMM", Locale.getDefault()).format(Date(expense.timestamp)),
                                 style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                fontWeight = FontWeight.Bold
+                                color = Color.Gray
                             )
                         }
-                    } else {
-                        val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
-                        Text(
-                            text = sdf.format(Date(expense.timestamp)),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray
-                        )
                     }
                 }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "$${String.format(Locale.US, "%,.2f", expense.amount)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (expense.isRecurring) colorsForCategory(expense.category) else MaterialTheme.colorScheme.onSurface
-                )
-                
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Eliminar Gasto",
-                        tint = Color.LightGray,
-                        modifier = Modifier.size(16.dp)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "$${String.format(Locale.US, "%,.2f", expense.amount)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = catColor
                     )
+                    IconButton(onClick = onDelete, modifier = Modifier.size(22.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f), modifier = Modifier.size(14.dp))
+                    }
                 }
             }
         }
@@ -711,12 +668,18 @@ private fun colorsForCategory(category: String): Color {
 }
 
 @Composable
-fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double, String, Boolean, String?) -> Unit) {
+fun AddExpenseDialog(
+    members: List<String>,
+    activeUser: String,
+    onDismiss: () -> Unit,
+    onAdd: (String, Double, String, Boolean, String?, String) -> Unit
+) {
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Alimentos") }
     var isRecurring by remember { mutableStateOf(false) }
     var recurringDueDate by remember { mutableStateOf("") }
+    var paidBy by remember(activeUser) { mutableStateOf(activeUser) }
 
     val categories = listOf("Alimentos", "Servicio", "Alquiler", "Diverso")
 
@@ -817,6 +780,29 @@ fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double, String, Bool
                         }
                     }
 
+                    if (members.size > 1) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Pagado por",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                members.forEach { member ->
+                                    FilterChip(
+                                        selected = paidBy == member,
+                                        onClick = { paidBy = member },
+                                        label = { Text(member, fontSize = 12.sp) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                     // Recurring switch representation
@@ -872,11 +858,12 @@ fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double, String, Bool
                             val amtVal = amount.toDoubleOrNull() ?: 0.0
                             if (title.isNotBlank() && amtVal > 0.0) {
                                 onAdd(
-                                    title, 
-                                    amtVal, 
-                                    category, 
-                                    isRecurring, 
-                                    if (isRecurring && recurringDueDate.isNotBlank()) recurringDueDate else "Día 05 de cada mes"
+                                    title,
+                                    amtVal,
+                                    category,
+                                    isRecurring,
+                                    if (isRecurring && recurringDueDate.isNotBlank()) recurringDueDate else "Día 05 de cada mes",
+                                    paidBy
                                 )
                             }
                         },

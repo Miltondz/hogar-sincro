@@ -265,6 +265,7 @@ fun LoginScreen(viewModel: HomeViewModel) {
 
                         Spacer(modifier = Modifier.height(4.dp))
 
+                        if (com.example.BuildConfig.DEBUG) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -382,6 +383,7 @@ fun LoginScreen(viewModel: HomeViewModel) {
                                 }
                             }
                         }
+                        } // end BuildConfig.DEBUG
 
                     } else {
                         // REGISTER SCREEN FLOW

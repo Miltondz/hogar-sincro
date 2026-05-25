@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) when working with this repo.
 
 ## Build & Run
 
@@ -18,11 +18,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew :app:clean
 ```
 
-On Windows use `gradlew.bat` or prefix with `.\`.
+Windows: use `gradlew.bat` or prefix `.\`.
 
 ## Architecture
 
-**Local-first Android app** (Kotlin + Jetpack Compose + Material 3). Single `MainActivity`, tab-based navigation.
+**Local-first Android app** (Kotlin + Jetpack Compose + Material 3). Single `MainActivity`, tab-based nav.
 
 ### Layers
 
@@ -40,7 +40,7 @@ data/DeletionTracker → SharedPreferences-backed deletion log for cloud sync co
 
 ### Data Flow
 
-- Local storage: Room (SQLite) on-device
+- Local: Room (SQLite) on-device
 - Cloud sync: bidirectional with **Neon Serverless PostgreSQL** (`sa-east-1`)
 - Sync uses `DeletionTracker` to prevent deleted items reappearing after sync
 - Auth: SharedPreferences + household code + member CSV list
@@ -48,19 +48,19 @@ data/DeletionTracker → SharedPreferences-backed deletion log for cloud sync co
 
 ### Scanner
 
-`GeminiScannerService` calls Gemini multimodal API. `CameraOrGalleryLauncher` is the reusable Compose camera/gallery picker composable; `FileProvider` config is in `res/xml/file_paths.xml`.
+`GeminiScannerService` calls Gemini multimodal API. `CameraOrGalleryLauncher` = reusable Compose camera/gallery picker composable; `FileProvider` config in `res/xml/file_paths.xml`.
 
 ### Web Companion
 
-`web-companion/` is a Next.js app. **Read `node_modules/next/dist/docs/` before touching it** — this version has breaking API/convention changes from standard Next.js.
+`web-companion/` = Next.js app. **Read `node_modules/next/dist/docs/` before touching** — breaking API/convention changes from standard Next.js.
 
 ## Key Configs
 
 - `compileSdk = 36`, `minSdk = 26`, Java 11
-- KSP (not KAPT) for Room + Moshi code generation
-- Robolectric tests run at SDK 36: `@Config(sdk = [36])`
+- KSP (not KAPT) for Room + Moshi code gen
+- Robolectric tests at SDK 36: `@Config(sdk = [36])`
 - Screenshot tests via Roborazzi
 
 ## Neon PostgreSQL Schema
 
-Tables mirror Room entities 1:1: `expenses`, `inventory_items`, `shopping_items`, `sync_settings`. DDL runs on first connection in `NeonDatabaseHelper`. The `id` fields are `SERIAL PRIMARY KEY` on Neon but `Int` with `autoGenerate = true` in Room — be careful with ID mapping on sync.
+Tables mirror Room entities 1:1: `expenses`, `inventory_items`, `shopping_items`, `sync_settings`. DDL runs on first connection in `NeonDatabaseHelper`. `id` fields are `SERIAL PRIMARY KEY` on Neon but `Int` with `autoGenerate = true` in Room — careful with ID mapping on sync.

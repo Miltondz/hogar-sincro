@@ -60,6 +60,7 @@ enum class NavigationTab {
 fun MainAppScreen(viewModel: HomeViewModel) {
     var currentTab by remember { mutableStateOf(NavigationTab.EXPENSES) }
     val notifications by viewModel.notifications.collectAsState()
+    val neonConnectionState by viewModel.neonConnectionState.collectAsState()
     var showNotificationsDialog by remember { mutableStateOf(false) }
     val showWebPortal by viewModel.showWebPortal.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -67,10 +68,14 @@ fun MainAppScreen(viewModel: HomeViewModel) {
     // Collect snackbar events from ViewModel and show them
     LaunchedEffect(Unit) {
         viewModel.snackbarEvents.collect { event ->
-            snackbarHostState.showSnackbar(
+            val result = snackbarHostState.showSnackbar(
                 message = event.message,
-                duration = SnackbarDuration.Short
+                actionLabel = event.actionLabel,
+                duration = if (event.actionLabel != null) SnackbarDuration.Short else SnackbarDuration.Short
             )
+            if (result == SnackbarResult.ActionPerformed && event.actionKey != null) {
+                viewModel.undoDelete(event.actionKey)
+            }
         }
     }
 
@@ -117,6 +122,32 @@ fun MainAppScreen(viewModel: HomeViewModel) {
                         }
                     },
                     actions = {
+                        if (neonConnectionState == "ERROR" || neonConnectionState == "DISCONNECTED") {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFD32F2F).copy(alpha = 0.12f))
+                                    .clickable { currentTab = NavigationTab.SYNC }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudOff,
+                                        contentDescription = "Sin conexión Neon",
+                                        tint = Color(0xFFD32F2F),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Offline",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFD32F2F)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
                         // Desktop companion switch button
                         TextButton(
                             onClick = { viewModel.showWebPortal.value = true },

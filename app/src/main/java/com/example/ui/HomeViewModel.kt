@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.api.RetrofitClient
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -189,8 +190,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val pendingDeletes = mutableMapOf<String, Job>()
+
+    fun undoDelete(key: String) {
+        pendingDeletes[key]?.cancel()
+        pendingDeletes.remove(key)
+    }
+
+    private fun scheduleDelete(key: String, message: String, block: suspend () -> Unit) {
+        pendingDeletes[key]?.cancel()
+        val job = viewModelScope.launch {
+            delay(4000)
+            block()
+            pendingDeletes.remove(key)
+        }
+        pendingDeletes[key] = job
+        viewModelScope.launch {
+            _snackbarEvent.send(SnackbarEvent(message, SnackbarType.WARNING, "Deshacer", key))
+        }
+    }
+
     // Expense Actions
-    fun addExpense(title: String, amount: Double, category: String, isRecurring: Boolean = false, dueDate: String? = null) {
+    fun addExpense(title: String, amount: Double, category: String, isRecurring: Boolean = false, dueDate: String? = null, paidBy: String? = null) {
         viewModelScope.launch {
             val activeUser = syncSettings.value.activeUser
             val expense = Expense(
@@ -199,7 +220,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 category = category,
                 isRecurring = isRecurring,
                 recurringDueDate = dueDate,
-                paidBy = activeUser
+                paidBy = paidBy ?: activeUser
             )
             repository.insertExpense(expense)
             generateSmartAlerts()
@@ -209,13 +230,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteExpense(expense: Expense) {
-        viewModelScope.launch {
+        scheduleDelete("expense_${expense.id}", "Gasto eliminado") {
             DeletionTracker.trackExpenseDeletion(getApplication(), expense.id)
             repository.deleteExpense(expense)
             generateSmartAlerts()
-            showSnackbar("Gasto eliminado", SnackbarType.WARNING)
-            val activeUser = syncSettings.value.activeUser
-            addSyncActivity(activeUser, "Eliminó el gasto: ${expense.title}", "GASTOS")
+            addSyncActivity(syncSettings.value.activeUser, "Eliminó el gasto: ${expense.title}", "GASTOS")
         }
     }
 
@@ -306,10 +325,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteShoppingItem(item: ShoppingItem) {
-        viewModelScope.launch {
+        scheduleDelete("shopping_${item.id}", "Artículo removido de la lista") {
             DeletionTracker.trackShoppingDeletion(getApplication(), item.id)
             repository.deleteShoppingItem(item)
-            showSnackbar("Artículo removido de la lista", SnackbarType.WARNING)
         }
     }
 
@@ -358,12 +376,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteInventoryItem(item: InventoryItem) {
-         viewModelScope.launch {
-              DeletionTracker.trackInventoryDeletion(getApplication(), item.id)
-              repository.deleteInventoryItem(item)
-              generateSmartAlerts()
-              showSnackbar("${item.name} eliminado del inventario", SnackbarType.WARNING)
-         }
+        scheduleDelete("inventory_${item.id}", "${item.name} eliminado del inventario") {
+            DeletionTracker.trackInventoryDeletion(getApplication(), item.id)
+            repository.deleteInventoryItem(item)
+            generateSmartAlerts()
+        }
     }
 
     fun quickConsumeItem(item: InventoryItem) {
@@ -810,5 +827,7 @@ enum class SnackbarType { SUCCESS, ERROR, WARNING, INFO }
 
 data class SnackbarEvent(
     val message: String,
-    val type: SnackbarType = SnackbarType.INFO
+    val type: SnackbarType = SnackbarType.INFO,
+    val actionLabel: String? = null,
+    val actionKey: String? = null
 )
